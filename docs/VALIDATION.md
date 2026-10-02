@@ -19,3 +19,9 @@ For browser acceptance, inspect the native Settings section and session header a
 MVU acceptance requires the integrated source build exposing `tavernMvu` v1. Test shared IDs across sessions, copy/new IDs, source CAS/idempotency, management ownership loss/error/unload, completed-final-message gates and genuine request evidence. Adapter fixtures alone do not establish this integration. TaskSystem is not implemented by this package.
 
 Keep run-specific logs, screenshots, local paths and private data in ignored `.local/`. Before publication, independently verify the current Awesome contribution rules and public repository age, real commit count, topic and description. Never manufacture commits to pass an external gate.
+
+## Frozen MVU source integration
+
+Set `DSH_MEMORY_MVU=/absolute/path/to/frozen/tavern-checkout` and `DSH_MEMORY_RUNTIME` to the request-assembly-enabled DSH runtime, then run `node --test test/mvu-integration.test.mjs`. The test imports the actual public MVU service and Tavern Host integration from that checkout without modifying it. It uses temporary stores, self-authored resources and a synthetic grant authority/provider; it runs no user card scripts and uses no external credentials.
+
+The checks cover cross-session current identity, source CAS/copy/mode APIs, explicit authority rejection, card policy plus separate grant, patch/replace/schema behavior, source idempotency and commit facts, manager unload, caller cancellation and grant revocation during the final awaited scope read. A real DSH AgentLoop test observes MVU text in the captured provider request, source request/state facts, and managed fail-closed behavior after manager removal. These are source API and actual-core Host checks, not browser/renderer binding acceptance or proof of external-provider delivery. Record the source commit and clean-worktree status with every run; repeat against the selected final merged build.
