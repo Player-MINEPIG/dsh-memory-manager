@@ -50,7 +50,7 @@ dsh plugin --profile web add /absolute/path/to/dsh-memory-manager
 
 HTTP 地址只接受明确配置的 loopback origin。管理路由使用 DSH `connection.admit` 原有 Host/Origin 与浏览器认证，认证服务缺失时不开放路由。来源错误或卸载会显式显示，不把旧内容当作当前值。MVU 与装配来源通过可选 Cordis 服务自动发现，核心和两面板无需 Tavern。
 
-文件 Skill 用来源路径形成身份；没有稳定来源定位符的虚拟 Skill 用提供方、名称与正文形成内容地址，跨会话相同定义共享 ID，正文变更产生新 ID。这是原生 API 未公开可持久 locator 时的只读适配边界。
+文件 Skill 用来源路径形成身份。虚拟 Skill 可在 `metadata.dshResourceIdentity` 声明 `{version:1, namespace:"your.source", id:"your-resource"}`；实体 ID 只由此身份决定，正文只影响 revision。声明必须由来源维护，copy 使用新 id，独立 shadow 使用独立 id。没有声明的虚拟 Skill 仅提供当前查看周期的临时句柄、诊断和 `bind:false` 能力，禁止持久绑定配置；不会将正文、会话或 registry 对象伪装成持久身份。
 
 注册与使用协议见 [docs/API.md](docs/API.md)。验证范围与复现步骤见 [docs/VALIDATION.md](docs/VALIDATION.md)。MIT 许可。Awesome 列表的公开仓库年龄、真实提交数量、topic、维护和收录审核属于外部条件；本地可安装不代表已满足这些条件。
 
