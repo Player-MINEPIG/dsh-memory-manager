@@ -47,3 +47,15 @@ test('allowed MVU decisions carry a private synchronous lease invalidated by rel
  const current=await t.decide(t.request);assert.equal(current.checkCurrent(),true)
  t.dispose();assert.equal(current.checkCurrent(),false)
 })
+
+test('same-function condition re-registration never revives a revoked policy lease or old disposer',async()=>{
+ const t=setup(),sameFunction=()=>true
+ const remove=t.usage.registerCondition({id:'review-condition',test:sameFunction});t.config.store.rule='review-condition'
+ const old=await t.decide(t.request);assert.equal(old.checkCurrent(),true)
+ remove();assert.equal(old.checkCurrent(),false)
+ const removeNew=t.usage.registerCondition({id:'review-condition',test:sameFunction})
+ assert.equal(old.checkCurrent(),false,'An old policy lease must remain revoked after same-function re-registration')
+ const current=await t.decide(t.request);assert.equal(current.checkCurrent(),true)
+ remove();assert.equal(current.checkCurrent(),true,'An old disposer cannot remove a new registration')
+ removeNew();assert.equal(current.checkCurrent(),false);t.dispose()
+})

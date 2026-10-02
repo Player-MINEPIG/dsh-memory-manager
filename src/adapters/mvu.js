@@ -23,7 +23,7 @@ export function installMvu(manager,service,usage){
     const behavior=config[mode]
     if(!applies(config,request.scope))return {enabled:false,reason:'scope'}
     if(!behavior||!(Array.isArray(behavior.on)?behavior.on:[behavior.on]).includes(request.on))return {enabled:false,reason:'timing'}
-    const enabled=await usage.rule(behavior.rule??true,{...request.event,on:request.on,scope:request.scope})
+    const enabled=await usage.rule(behavior.rule??true,{...request.event,on:request.on,scope:request.scope},conditions)
     if(disposed)return {enabled:false,reason:'manager-unloaded'}
     const checkCurrent=()=>!disposed&&!lifetime?.signal.aborted&&manager.adapters.get(adapter.id)===adapter&&manager.lifetimes.get(adapter)===lifetime&&!manager.configuration.error&&manager.configuration.document===document&&manager.configuration.document.revision===revision&&manager.configuration.pending===reloadEpoch&&conditions.size===usage.conditions.size&&[...conditions].every(([id,condition])=>usage.conditions.get(id)===condition)
     if(!checkCurrent())return {enabled:false,reason:'config-changed'}

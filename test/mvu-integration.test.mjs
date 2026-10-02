@@ -137,3 +137,37 @@ test('real MVU cannot commit an old manager permit after actual config reload du
   assert(!f.manager.traces.some(e=>e.phase==='applied'))
  })
 })
+
+test('real MVU rejects a revoked condition lease after same-function re-registration in final scope await',{skip:!root},async t=>{
+ const f=await cardFixture(t);f.grant();const {capability}=await f.bind(),sameFunction=()=>true
+ const remove=f.usage.registerCondition({id:'condition-generation',test:sameFunction});f.policy.store.rule='condition-generation';await f.configure([f.policy])
+ let enter,release,calls=0;const entered=new Promise(r=>enter=r),original=f.service.resolveScope
+ f.service.resolveScope=async scope=>{const evidence=await original(scope);if(++calls===2){enter();await new Promise(r=>release=r)}return evidence}
+ const before=await f.service.read({id:'mvu:card',scope:{sessionId:'s'}})
+ const pending=f.service.cardWrite({capability,operation:'patch',value:[{op:'delta',path:'/hp',value:-2}],expectedRevision:before.revision,operationId:'condition-aba',cause:'user-interaction'})
+ await entered;remove();f.usage.registerCondition({id:'condition-generation',test:sameFunction});release()
+ await assert.rejects(()=>pending)
+ const after=await f.service.read({id:'mvu:card',scope:{sessionId:'s'}})
+ assert.equal(after.revision,before.revision);assert.deepEqual(after.content,before.content);assert(!f.manager.traces.some(e=>e.phase==='applied'))
+})
+
+test('actual MVU initial Host binding retains manager policy, shared state and first-turn invalidation',{skip:!root},async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'manager-mvu-initial-'));t.after(()=>rm(dir,{recursive:true,force:true}))
+ const {installMvu:installSource}=await import(pathToFileURL(join(resolve(root),'packages/mvu-adapter/src/host.js')).href)
+ const scope={mode:'initial',playthroughId:'p',sessionId:'s',characterId:'c',sessionFormatVersion:4},sourceIdentity={version:1,sha256:'b'.repeat(64),scope}
+ let events=[];const session={id:'s',header:{id:'s',version:4,createdAt:'initial-test'},snapshotEvents:()=>events},handlers=new Map(),services=new Map([['sessions',new Map([['s',session]])],['tavernRenderingAuthority',{resolve:async()=>({valid:true,write:true,scope}),isCurrent:()=>true}]])
+ const ctx={get:n=>services.get(n),provide:(n,s)=>services.set(n,s),on:(n,h)=>handlers.set(n,h),effect:f=>f()}
+ const service=installSource(ctx,{storageDir:dir,resources:[{id:'mvu:initial',characterId:'c',sessionIds:['s','other'],managementMode:'managed',initial:{stat_data:{hp:10}}}],sources:{register:()=>()=>{}},memberships:{readCatalog:()=>({catalog:{playthroughs:[{id:'p',ext:{pmpDshTavern:{rootSessionId:'s',characterId:'c'}}}]}}),readTimeline:()=>({timeline:{nodes:[],head:null}})},getSelection:()=>({characterCardId:'c'}),getSelectionToken:()=>1,isActive:()=>true})
+ const f=await setupManager(t,service),policy={id:'mvu:initial',adapterId,type:'mvu-state',whitelist:[{sessionId:'s'}],blacklist:[],store:{on:'card_variable_update',rule:{condition:{id:'mvu_card_write_cause',params:{cause:'user-interaction'}}},strategy:cardStrategy}}
+ let observedScope;f.usage.registerCondition({id:'initial-scope',test:e=>{observedScope=e.scope;return e.scope.mode==='initial'}});policy.store.rule={all:[policy.store.rule,'initial-scope']};await f.configure([policy])
+ const {capability}=await service.createCardBinding({scope,grantId:'synthetic',sourceIdentity}),request={capability,operation:'replace',value:{stat_data:{hp:7}},expectedRevision:0,operationId:'initial-write',cause:'user-interaction'}
+ const result=await service.cardWrite(request);assert.equal(result.variables.stat_data.hp,7);assert.deepEqual(observedScope,{...scope,authority:'local'})
+ assert.equal((await f.manager.read({adapterId,id:'mvu:initial',scope:{sessionId:'other'}})).content.stat_data.hp,7)
+ assert.equal(f.manager.traces.filter(e=>e.phase==='applied').length,1)
+ assert.equal(f.manager.traces.find(e=>e.phase==='applied').configRevision,f.manager.configuration.document.revision)
+ assert.deepEqual(await service.cardWrite(request),result)
+ await f.configure([]);await assert.rejects(()=>service.cardWrite({...request,expectedRevision:1,operationId:'missing-policy'}))
+ await f.configure([policy]);events=[{type:'turn/start',seq:0,data:{turn:1}}];handlers.get('session/event')(session,events[0])
+ await assert.rejects(()=>service.cardWrite({...request,expectedRevision:1,operationId:'after-first-turn'}),{code:'MVU_READ_ONLY'})
+ assert.equal((await service.read({id:'mvu:initial',scope:{sessionId:'s'}})).revision,1)
+})
