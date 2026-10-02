@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "revision": 1,
+  "entries": [],
+  "presets": {
+    "mvu-managed": {
+      "type": "mvu-state",
+      "whitelist": [],
+      "blacklist": [],
+      "store": {"on": "assistant_message_committed", "rule": "contains_mvu_update", "strategy": [{"operation":"parse_mvu_update"},{"operation":"validate_update"},{"operation":"apply_update"}]},
+      "retrieve": {"on":"before_model_request", "rule": true, "strategy": [{"operation":"read_content"},{"operation":"render_state_and_update_instructions"},{"operation":"provide_to_model"}]}
+    }
+  }
+}
