@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto'
 import {createRequire} from 'node:module'
 import {pathToFileURL} from 'node:url'
 import {join,resolve} from 'node:path'
-import {mkdtemp,writeFile,rm} from 'node:fs/promises'
+import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {MemoryManager} from '../src/manager.js'
 import {Usage} from '../src/usage.js'
@@ -153,11 +153,18 @@ test('real MVU rejects a revoked condition lease after same-function re-registra
 
 test('actual MVU initial Host binding retains manager policy, shared state and first-turn invalidation',{skip:!root},async t=>{
  const dir=await mkdtemp(join(tmpdir(),'manager-mvu-initial-'));t.after(()=>rm(dir,{recursive:true,force:true}))
- const {installMvu:installSource}=await import(pathToFileURL(join(resolve(root),'packages/mvu-adapter/src/host.js')).href)
+ const load=path=>import(pathToFileURL(join(resolve(root),path)).href)
+ const [{installMvu:installSource},{PlayWorkspaceStore},{PlayMembershipService},{SessionSelectionStore}]=await Promise.all([load('packages/mvu-adapter/src/host.js'),load('packages/play/src/workspace.js'),load('packages/play/src/membership.js'),load('packages/tavern-loader/src/session-policy.js')])
+ const workspaceRoot=join(dir,'play');await mkdir(workspaceRoot)
+ const workspace=new PlayWorkspaceStore(join(dir,'workspace'));await workspace.bindRoot(workspaceRoot)
+ workspace.writeFile('p/timeline.json',JSON.stringify({nodes:[]}),{expectedRevision:null,expectedRevisionPresent:true})
+ const catalog=JSON.stringify({playthroughs:[{id:'p',path:'p/timeline.json',ext:{pmpDshTavern:{rootSessionId:'s',characterId:'c'}}}]})
+ workspace.writeFile('catalog.json',catalog,{expectedRevision:null,expectedRevisionPresent:true})
+ const memberships=new PlayMembershipService(workspace),selections=new SessionSelectionStore(dir);selections.set('s',{characterCardId:'c'})
  const scope={mode:'initial',playthroughId:'p',sessionId:'s',characterId:'c',sessionFormatVersion:4},sourceIdentity={version:1,sha256:'b'.repeat(64),scope}
- let events=[];const session={id:'s',header:{id:'s',version:4,createdAt:'initial-test'},snapshotEvents:()=>events},handlers=new Map(),services=new Map([['sessions',new Map([['s',session]])],['tavernRenderingAuthority',{resolve:async()=>({valid:true,write:true,scope}),isCurrent:()=>true}]])
+ let events=[{type:'permission/preset',seq:0,data:{preset:'workspace-write'}},{type:'sandbox/mode',seq:1,data:{mode:'workspace-write'}},{type:'approval/policy',seq:2,data:{policy:'ask'}},{type:'sandbox/mode',seq:3,data:{mode:'read-only'}}];const session={id:'s',header:{id:'s',version:4,createdAt:'initial-test'},snapshotEvents:()=>events},handlers=new Map(),services=new Map([['sessions',new Map([['s',session]])],['tavernRenderingAuthority',{resolve:async()=>({valid:true,write:true,scope}),isCurrent:()=>true}]])
  const ctx={get:n=>services.get(n),provide:(n,s)=>services.set(n,s),on:(n,h)=>handlers.set(n,h),effect:f=>f()}
- const service=installSource(ctx,{storageDir:dir,resources:[{id:'mvu:initial',characterId:'c',sessionIds:['s','other'],managementMode:'managed',initial:{stat_data:{hp:10}}}],sources:{register:()=>()=>{}},memberships:{readCatalog:()=>({catalog:{playthroughs:[{id:'p',ext:{pmpDshTavern:{rootSessionId:'s',characterId:'c'}}}]}}),readTimeline:()=>({timeline:{nodes:[],head:null}})},getSelection:()=>({characterCardId:'c'}),getSelectionToken:()=>1,isActive:()=>true})
+ const service=installSource(ctx,{storageDir:dir,resources:[{id:'mvu:initial',characterId:'c',sessionIds:['s','other'],managementMode:'managed',initial:{stat_data:{hp:10}}}],sources:{register:()=>()=>{}},memberships,getSelection:id=>selections.get(id),getSelectionToken:id=>selections.selectionRevision(id),isActive:(resource,id)=>resource.characterId===selections.get(id).characterCardId})
  const f=await setupManager(t,service),policy={id:'mvu:initial',adapterId,type:'mvu-state',whitelist:[{sessionId:'s'}],blacklist:[],store:{on:'card_variable_update',rule:{condition:{id:'mvu_card_write_cause',params:{cause:'user-interaction'}}},strategy:cardStrategy}}
  let observedScope;f.usage.registerCondition({id:'initial-scope',test:e=>{observedScope=e.scope;return e.scope.mode==='initial'}});policy.store.rule={all:[policy.store.rule,'initial-scope']};await f.configure([policy])
  const {capability}=await service.createCardBinding({scope,grantId:'synthetic',sourceIdentity}),request={capability,operation:'replace',value:{stat_data:{hp:7}},expectedRevision:0,operationId:'initial-write',cause:'user-interaction'}
@@ -167,7 +174,14 @@ test('actual MVU initial Host binding retains manager policy, shared state and f
  assert.equal(f.manager.traces.find(e=>e.phase==='applied').configRevision,f.manager.configuration.document.revision)
  assert.deepEqual(await service.cardWrite(request),result)
  await f.configure([]);await assert.rejects(()=>service.cardWrite({...request,expectedRevision:1,operationId:'missing-policy'}))
- await f.configure([policy]);events=[{type:'turn/start',seq:0,data:{turn:1}}];handlers.get('session/event')(session,events[0])
+ await f.configure([policy])
+ // Actual membership/file generations must invalidate the old binding even when identical bytes return.
+ assert.equal(memberships.detach('p','s').detached,true)
+ workspace.writeFile('catalog.json',catalog,{expectedRevision:workspace.readFile('catalog.json').revision,expectedRevisionPresent:true})
+ await assert.rejects(()=>service.cardWrite({...request,expectedRevision:1,operationId:'membership-restored'}),{code:'MVU_READ_ONLY'})
+ const fresh=await service.createCardBinding({scope,grantId:'synthetic',sourceIdentity})
+ request.capability=fresh.capability
+ events.push({type:'turn/start',seq:4,data:{turn:1}});handlers.get('session/event')(session,events.at(-1))
  await assert.rejects(()=>service.cardWrite({...request,expectedRevision:1,operationId:'after-first-turn'}),{code:'MVU_READ_ONLY'})
  assert.equal((await service.read({id:'mvu:initial',scope:{sessionId:'s'}})).revision,1)
 })
