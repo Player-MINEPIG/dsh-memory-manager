@@ -27,6 +27,8 @@ dsh plugin --profile web add /absolute/path/to/dsh-memory-manager
 - preset 持续覆盖明确提供的字段。名单、规则树、操作链整体替换；空值与未提供不同。`id/content` 不被覆盖。UI 展示字段来源。
 - 来源原生管理、已委托管理、托管但不适用是不同状态。已托管资源缺配置时拒绝执行。
 
+卡片变量写入使用独立的 `card_variable_update` 时机和来源验证事务。代码审批、写能力授权和管理规则是分别校验的条件；默认示例不启用写，历史气泡不提升到当前可写范围。`mvu_card_write_cause` 可筛选宿主确认的交互、定时器或脚本调用原因，不能代替授权。具体合同见 API 文档；实际卡 API 兼容与两线绑定尚待联测。
+
 复杂配置为本地 JSON；不会运行文件中的 JS。可信 Host 插件可注册条件/操作。时间检查点可接同一触发协议；主动唤醒 Agent 还需宿主调度与授权，本插件不建立后台任务循环。
 
 ## 可选适配
@@ -35,7 +37,7 @@ dsh plugin --profile web add /absolute/path/to/dsh-memory-manager
 | --- | --- | --- |
 | DSH Skills | 目录与正文读取；会话查询使用真实 Agent scope | 优先会话 preset registry，未知会话不回退全局；无编辑接口，明确只读 |
 | Tavern 世界书 | 通过公开 v1 HTTP API 读目录、正文和评估记录 | 当前显式绑定、公开 active 有效资源与历史 Trace 的并集；active 不作为触发证据；无原子 CAS API，明确只读 |
-| Tavern MVU v1 | 公开服务包装、CAS 编辑、使用决策、真实事件观察 | 需要提供 `tavernMvu` v1 的 Tavern 版本；不把旧 Tavern 当作已兼容 |
+| Tavern MVU v1 | 公开服务包装、CAS 编辑、使用决策、真实事件观察；可选 card_variable_update 策略桥 | 需要提供 `tavernMvu` v1 的 Tavern 版本；不把旧 Tavern 当作已兼容 |
 | Tavern Request Sources v1 | `memory-manager.resources` 只读来源，版本化块标识 | 需支持 request assembly v1 的 DSH core；用户自行选择装配来源；不会自动改预设 |
 | TaskSystem | scope/authority/使用协议兼容边界 | 本版本没有 TaskSystem adapter，不开放额外模型工具或放宽 guard |
 

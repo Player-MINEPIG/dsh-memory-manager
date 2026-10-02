@@ -7,8 +7,53 @@
       "type": "mvu-state",
       "whitelist": [],
       "blacklist": [],
-      "store": {"on": "assistant_message_committed", "rule": "contains_mvu_update", "strategy": [{"operation":"parse_mvu_update"},{"operation":"validate_update"},{"operation":"apply_update"}]},
-      "retrieve": {"on":"before_model_request", "rule": true, "strategy": [{"operation":"read_content"},{"operation":"render_state_and_update_instructions"},{"operation":"provide_to_model"}]}
+      "store": {
+        "on": "assistant_message_committed",
+        "rule": "contains_mvu_update",
+        "strategy": [
+          {
+            "operation": "parse_mvu_update"
+          },
+          {
+            "operation": "validate_update"
+          },
+          {
+            "operation": "apply_update"
+          }
+        ]
+      },
+      "retrieve": {
+        "on": "before_model_request",
+        "rule": true,
+        "strategy": [
+          {
+            "operation": "read_content"
+          },
+          {
+            "operation": "render_state_and_update_instructions"
+          },
+          {
+            "operation": "provide_to_model"
+          }
+        ]
+      }
+    },
+    "mvu-card-write-disabled": {
+      "type": "mvu-state",
+      "whitelist": [],
+      "blacklist": [],
+      "store": {
+        "on": "card_variable_update",
+        "rule": false,
+        "strategy": [
+          {
+            "operation": "validate_card_update"
+          },
+          {
+            "operation": "apply_card_update"
+          }
+        ]
+      }
     }
   }
 }
