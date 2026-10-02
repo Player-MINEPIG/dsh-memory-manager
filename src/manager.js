@@ -14,10 +14,16 @@ export class MemoryManager {
     if(!adapter?.id||!adapter.authority||typeof adapter.list!=='function'||typeof adapter.read!=='function'||this.adapters.has(adapter.id)) fail('INVALID_ADAPTER','Adapter requires unique id, authority, list and read')
     const lifetime=new AbortController();this.lifetimes.set(adapter,lifetime)
     this.adapters.set(adapter.id,adapter)
+    const validation=this.validateAdapter(adapter)
+    validation.catch(e=>{if(!lifetime.signal.aborted)this.diagnostics.push({adapterId:adapter.id,code:e.code??'SOURCE_CONFIG_INVALID',message:e.message})})
     let stop
-    try{stop=adapter.observe?.(event=>{if(this.adapters.get(adapter.id)!==adapter)return;try{this.recordTrace({...event,adapterId:adapter.id})}catch(e){this.diagnostics.push({adapterId:adapter.id,code:'INVALID_SOURCE_TRACE',message:e.message})}})}catch(e){this.adapters.delete(adapter.id);lifetime.abort();throw e}
-    return ()=>{lifetime.abort();stop?.();for(const [id,owner] of this.owners)if(owner===adapter)this.owners.delete(id);if(this.adapters.get(adapter.id)===adapter)this.adapters.delete(adapter.id);for(const [k,v] of this.active)if(v.adapterId===adapter.id)this.active.delete(k)}
+    try{stop=adapter.observe?.(event=>{if(lifetime.signal.aborted||this.lifetimes.get(adapter)!==lifetime||this.adapters.get(adapter.id)!==adapter)return;try{this.recordTrace({...event,adapterId:adapter.id})}catch(e){this.diagnostics.push({adapterId:adapter.id,code:'INVALID_SOURCE_TRACE',message:e.message})}})}catch(e){this.adapters.delete(adapter.id);lifetime.abort();throw e}
+    return ()=>{lifetime.abort();stop?.();if(this.lifetimes.get(adapter)!==lifetime)return;for(const [id,owner] of this.owners)if(owner===adapter)this.owners.delete(id);if(this.adapters.get(adapter.id)===adapter)this.adapters.delete(adapter.id);for(const [k,v] of this.active)if(v.adapterId===adapter.id)this.active.delete(k)}
   }
+  async validateAdapter(adapter) {
+    for(const entry of this.configuration.document.entries)if(entry.adapterId===adapter.id)await adapter.validateConfig?.(this.getConfig(entry.id).config)
+  }
+  assertOwner(adapter,id) {const owner=this.owners.get(id);if(owner&&owner!==adapter)fail('OWNERSHIP_CONFLICT',`Multiple adapters claim resource ${id}`)}
   getConfig(id) {return this.configuration.get(id)}
   async reload() {return this.configuration.reload(async doc=>{
     for(const entry of doc.entries) {const a=this.adapters.get(entry.adapterId);if(a?.validateConfig) await a.validateConfig(effective(doc,entry.id).config)}
@@ -58,13 +64,13 @@ export class MemoryManager {
   async update({adapterId,id,scope={},content,expectedRevision,operationId,signal}) {
     const a=this.adapters.get(adapterId);if(!a?.update)fail('READ_ONLY','Source does not support editing')
     if(expectedRevision===undefined||typeof operationId!=='string'||!operationId)fail('INVALID_UPDATE','Revision and operationId are required')
-    safe(content);const result=await this.invoke(a,'update',{id,scope,content:clone(content),expectedRevision,operationId,signal});this.claim(a,result,id);return clone(result)
+    this.assertOwner(a,id);safe(content);this.owners.set(id,a);const result=await this.invoke(a,'update',{id,scope,content:clone(content),expectedRevision,operationId,signal});this.claim(a,result,id);return clone(result)
   }
-  async copy({adapterId,id,scope={},newId,signal}) {const a=this.adapters.get(adapterId);if(!a?.copy)fail('READ_ONLY','Source does not support copying');if(!newId||newId===id)fail('INVALID_COPY','Copy requires a new ID');const result=await this.invoke(a,'copy',{id,scope,newId,signal});this.claim(a,result,newId);return clone(result)}
+  async copy({adapterId,id,scope={},newId,signal}) {const a=this.adapters.get(adapterId);if(!a?.copy)fail('READ_ONLY','Source does not support copying');if(!newId||newId===id)fail('INVALID_COPY','Copy requires a new ID');this.assertOwner(a,id);this.assertOwner(a,newId);this.owners.set(id,a);this.owners.set(newId,a);const result=await this.invoke(a,'copy',{id,scope,newId,signal});this.claim(a,result,newId);return clone(result)}
   claim(adapter,record,expectedId){
     if(!record||typeof record.id!=='string'||typeof record.type!=='string'||(expectedId&&record.id!==expectedId))fail('INVALID_RECORD','Source returned an invalid resource identity')
     safe(record);if(JSON.stringify(record).length>2_000_000)fail('TOO_LARGE','Resource exceeds 2 MB')
-    const owner=this.owners.get(record.id);if(owner&&owner!==adapter)fail('OWNERSHIP_CONFLICT',`Multiple adapters claim resource ${record.id}`)
+    this.assertOwner(adapter,record.id)
     this.owners.set(record.id,adapter)
   }
   async invoke(adapter,method,args){
@@ -74,6 +80,6 @@ export class MemoryManager {
     if(this.adapters.get(adapter.id)!==adapter)fail('SOURCE_UNAVAILABLE','Source registration changed')
     return result
   }
-  async setManagementMode({adapterId,...args}){const a=this.adapters.get(adapterId);if(!a?.setManagementMode)fail('UNSUPPORTED','Source does not expose management ownership');const result=await this.invoke(a,'setManagementMode',args);this.claim(a,result,args.id);return clone(result)}
+  async setManagementMode({adapterId,...args}){const a=this.adapters.get(adapterId);if(!a?.setManagementMode)fail('UNSUPPORTED','Source does not expose management ownership');this.assertOwner(a,args.id);this.owners.set(args.id,a);const result=await this.invoke(a,'setManagementMode',args);this.claim(a,result,args.id);return clone(result)}
   async dispose(){for(const lifetime of this.lifetimes.values())lifetime.abort();await this.pending}
 }

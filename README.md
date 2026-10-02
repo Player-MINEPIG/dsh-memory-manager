@@ -33,8 +33,8 @@ dsh plugin --profile web add /absolute/path/to/dsh-memory-manager
 
 | 来源 | 当前能力 | 边界 |
 | --- | --- | --- |
-| DSH Skills | 目录与正文读取；会话查询使用真实 Agent scope | registry 没有编辑接口，面板明确只读；未知会话不回退全局 |
-| Tavern 世界书 | 通过公开 v1 HTTP API 读目录、正文和评估记录 | 当前会话视图为显式绑定世界书；不假造完整继承绑定；无原子 CAS API，明确只读 |
+| DSH Skills | 目录与正文读取；会话查询使用真实 Agent scope | 优先会话 preset registry，未知会话不回退全局；无编辑接口，明确只读 |
+| Tavern 世界书 | 通过公开 v1 HTTP API 读目录、正文和评估记录 | 当前显式绑定、公开 active 有效资源与历史 Trace 的并集；active 不作为触发证据；无原子 CAS API，明确只读 |
 | Tavern MVU v1 | 公开服务包装、CAS 编辑、使用决策、真实事件观察 | 需要提供 `tavernMvu` v1 的 Tavern 版本；不把旧 Tavern 当作已兼容 |
 | Tavern Request Sources v1 | `memory-manager.resources` 只读来源，版本化块标识 | 需支持 request assembly v1 的 DSH core；用户自行选择装配来源；不会自动改预设 |
 | TaskSystem | scope/authority/使用协议兼容边界 | 本版本没有 TaskSystem adapter，不开放额外模型工具或放宽 guard |
@@ -48,7 +48,9 @@ dsh plugin --profile web add /absolute/path/to/dsh-memory-manager
     tavernBaseUrl: http://127.0.0.1:3080
 ```
 
-HTTP 地址只接受明确配置的 loopback origin。来源错误或卸载会显式显示，不把旧内容当作当前值。MVU 与装配来源通过可选 Cordis 服务自动发现，核心和两面板无需 Tavern。
+HTTP 地址只接受明确配置的 loopback origin。管理路由使用 DSH `connection.admit` 原有 Host/Origin 与浏览器认证，认证服务缺失时不开放路由。来源错误或卸载会显式显示，不把旧内容当作当前值。MVU 与装配来源通过可选 Cordis 服务自动发现，核心和两面板无需 Tavern。
+
+文件 Skill 用来源路径形成身份；没有稳定来源定位符的虚拟 Skill 用提供方、名称与正文形成内容地址，跨会话相同定义共享 ID，正文变更产生新 ID。这是原生 API 未公开可持久 locator 时的只读适配边界。
 
 注册与使用协议见 [docs/API.md](docs/API.md)。验证范围与复现步骤见 [docs/VALIDATION.md](docs/VALIDATION.md)。MIT 许可。Awesome 列表的公开仓库年龄、真实提交数量、topic、维护和收录审核属于外部条件；本地可安装不代表已满足这些条件。
 

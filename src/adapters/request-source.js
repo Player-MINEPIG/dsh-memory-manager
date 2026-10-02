@@ -11,6 +11,7 @@ export function registerRequestSource(manager,registry,usage){
    // MVU owns its native source and commit path; never emit or update it twice.
    if(entry.adapterId==='tavern.mvu')continue
    const snapshot=effective(doc,entry.id)
+   try {
    const result=await usage.trigger({id:entry.id,configurationSnapshot:snapshot,mode:'retrieve',preview:true,signal:context.signal,event:{on:'before_model_request',eventId:'readonly-resolver',scope:{sessionId:context.sessionId},turn:context.turn,step:context.step,nativeMessages:context.nativeMessages}})
    if(!result.matched)continue
    const text=typeof result.value==='string'?result.value:result.value?.text
@@ -19,6 +20,7 @@ export function registerRequestSource(manager,registry,usage){
    const blockId='v1-'+hash(tuple)
    blocks.push({id:blockId,type:'text',text,role:'system',source:{resourceId:entry.id,field:'content'}})
    diagnostics.push({code:'MEMORY_RESOURCE_VERSION',blockId,adapterId:entry.adapterId,...tuple})
+   }catch(error){context.signal?.throwIfAborted();diagnostics.push({code:'MEMORY_RESOURCE_UNAVAILABLE',adapterId:entry.adapterId,entityId:entry.id,reason:error.code??'SOURCE_ERROR',message:error.message})}
   }
   return {blocks,diagnostics}
  }})

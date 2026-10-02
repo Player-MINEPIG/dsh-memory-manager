@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {createRequire} from 'node:module'
 import {pathToFileURL} from 'node:url'
 import {join,resolve} from 'node:path'
-import {mkdtemp,writeFile,rm} from 'node:fs/promises'
+import {mkdtemp,writeFile,rm,mkdir} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import * as managerPlugin from '../src/index.js'
 const runtime=process.env.DSH_MEMORY_RUNTIME,tavernRoot=process.env.DSH_MEMORY_TAVERN
@@ -34,6 +34,31 @@ test('actual DSH request contains managed resource and version evidence; unload 
   await turn('ONE')
   assert(requests[0].some(m=>m.content.some(b=>b.text==='MANAGED_RESOURCE_BODY')))
   const traces=ctx.dshMemoryManager.traces;assert.equal(traces.filter(t=>t.phase==='applied').length,1);assert.equal(traces[0].revision,4);assert.equal(traces[0].configRevision,1)
+  // Native Skill registry + official filesystem provider through the same real request path.
+  const skillRoot=join(dir,'skills'),skillFile=join(skillRoot,'request-proof','SKILL.md')
+  await mkdir(join(skillRoot,'request-proof'),{recursive:true})
+  const saveSkill=body=>writeFile(skillFile,'---\nname: request-proof\ndescription: Synthetic request proof\n---\n'+body+'\n')
+  await saveSkill('NATIVE_SKILL_BODY_ONE')
+  const skillPlugin=ctx.plugin((await load('@deepseek-ai/dsh-skill')).default,{});await skillPlugin
+  const filesPlugin=ctx.plugin(await load('@deepseek-ai/dsh-skill-filesystem'),{providerName:'acceptance-files',includeDefaultRoots:false,customSkillDirs:[skillRoot],watch:false});await filesPlugin
+  const rows=await ctx.dshMemoryManager.query({scope:{sessionId:agent.id}})
+  const skill=rows.rows.find(r=>r.name==='request-proof');assert(skill)
+  const doc=structuredClone(ctx.dshMemoryManager.configuration.document);doc.revision=2;doc.entries.push({id:skill.id,adapterId:'dsh.skills',type:'skill',whitelist:[{global:true}],blacklist:[],retrieve:{on:'before_model_request',rule:true,strategy:[{operation:'memory.read_content'},{operation:'memory.to_text'}]}})
+  await writeFile(configPath,JSON.stringify(doc));await ctx.dshMemoryManager.reload()
+  await turn('NATIVE ONE')
+  assert(requests.at(-1).some(m=>m.content.some(b=>b.text?.includes('NATIVE_SKILL_BODY_ONE'))))
+  const firstRevision=ctx.dshMemoryManager.traces.findLast(t=>t.id===skill.id&&t.phase==='applied').revision
+  await saveSkill('NATIVE_SKILL_BODY_TWO')
+  // Reload provider to invalidate its catalog cache without changing the file identity.
+  await filesPlugin.dispose()
+  const newFiles=ctx.plugin(await load('@deepseek-ai/dsh-skill-filesystem'),{providerName:'acceptance-files',includeDefaultRoots:false,customSkillDirs:[skillRoot],watch:false});await newFiles
+  await turn('NATIVE TWO')
+  assert(requests.at(-1).some(m=>m.content.some(b=>b.text?.includes('NATIVE_SKILL_BODY_TWO'))))
+  assert.notEqual(ctx.dshMemoryManager.traces.findLast(t=>t.id===skill.id&&t.phase==='applied').revision,firstRevision)
+  await newFiles.dispose();await skillPlugin.dispose()
+  await turn('SOURCE ABSENT')
+  assert(requests.at(-1).some(m=>m.content.some(b=>b.text==='MANAGED_RESOURCE_BODY')))
+  assert(!requests.at(-1).some(m=>m.content.some(b=>b.text?.includes('NATIVE_SKILL_BODY_TWO'))))
   await plugin.dispose()
   assert(!ctx.tavernRequestSources.list().some(s=>s.id==='memory-manager.resources'))
   await turn('TWO')

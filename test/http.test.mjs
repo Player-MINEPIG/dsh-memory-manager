@@ -1,5 +1,11 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {handler} from '../src/http.js'
-async function call(manager,{url='/api/dsh-memory-manager/update',method='POST',headers={},body={}}={}){const req={url,method,headers:{host:'localhost:1',...headers},async *[Symbol.asyncIterator](){yield JSON.stringify(body)}};const res={statusCode:200,setHeader(){},end(body){this.body=JSON.parse(body)}};await handler(manager)(req,res);return res}
+async function call(manager,{url='/api/dsh-memory-manager/update',method='POST',headers={},body={}}={}){const req={url,method,headers:{host:'localhost:1',...headers},async *[Symbol.asyncIterator](){yield JSON.stringify(body)}};const res={statusCode:200,setHeader(){},end(body){this.body=JSON.parse(body)}};await handler(manager,{admit:()=>({peer:{}})})(req,res);return res}
 test('management mutation requires same-origin controls and cannot smuggle authority scope',async()=>{let args;const manager={update:async value=>{args=value;return {ok:true}}};let response=await call(manager);assert.equal(response.statusCode,403);assert.equal(args,undefined);response=await call(manager,{headers:{origin:'https://foreign.test','content-type':'application/json','x-dsh-memory-manager':'1'}});assert.equal(response.statusCode,403);response=await call(manager,{headers:{origin:'http://localhost:1','content-type':'application/json','x-dsh-memory-manager':'1'},body:{id:'a',sessionId:'visible-session',scope:{authority:'remote',sessionId:'different-session'}}});assert.equal(response.statusCode,200);assert.deepEqual(args.scope,{sessionId:'visible-session'})})
+
+test('HTTP handler fails closed without Host admission and preserves its rejection status',async()=>{
+ let calls=0;const manager={query:async()=>{calls++;return {}}},req={url:'/api/dsh-memory-manager/query',method:'GET',headers:{host:'attacker.example'}}
+ for(const connection of [undefined,{admit:()=>({rejection:401})},{admit:()=>({rejection:403})}]){const res={statusCode:200,setHeader(){},end(){}};await handler(manager,connection)(req,res);assert.equal(res.statusCode,connection?.admit().rejection??403)}
+ assert.equal(calls,0)
+})

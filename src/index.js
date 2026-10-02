@@ -19,6 +19,6 @@ export async function apply(ctx,config={}){
   ctx.inject(['tavernMvu'],c=>c.effect(()=>installMvu(manager,c.tavernMvu,usage)))
   if(config.tavernBaseUrl)ctx.effect(()=>manager.registerAdapter(tavernWorldBooks({baseUrl:config.tavernBaseUrl})))
   ctx.inject(['skills'],c=>c.effect(()=>manager.registerAdapter(skillAdapter(c))))
-  ctx.inject(['webServer'],c=>c.effect(()=>c.webServer.register({kind:'prefix',path:'/api/dsh-memory-manager',handler:handler(manager)})))
+  ctx.inject(['webServer','connection'],c=>c.effect(()=>c.webServer.register({kind:'prefix',path:'/api/dsh-memory-manager',handler:handler(manager,c.connection)})))
   ctx.effect(()=>()=>manager.dispose())
 }

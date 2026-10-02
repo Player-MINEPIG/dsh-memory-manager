@@ -20,19 +20,27 @@ export class Usage {
     if(this.manager.configuration.error)fail('CONFIG_UNAVAILABLE','Configuration is invalid; managed execution is blocked')
     const {config,revision}=configurationSnapshot??this.manager.getConfig(id),scope=event.scope??{},behavior=config?.[mode]
     if(!config||!applies(config,scope)||!behavior||!(Array.isArray(behavior.on)?behavior.on:[behavior.on]).includes(event.on))return {matched:false,reason:'scope-or-timing'}
+    const adapter=this.manager.adapters.get(config.adapterId)
+    if(!adapter)fail('SOURCE_UNAVAILABLE',config.adapterId)
+    const generation=this.manager.lifetimes.get(adapter)
+    if(adapter.validateConfig)await adapter.validateConfig(clone(config))
+    if(this.manager.adapters.get(config.adapterId)!==adapter)fail('SOURCE_UNAVAILABLE','Source registration changed')
     const operations=new Map(this.operations),conditions=new Map(this.conditions)
     if(!await this.rule(behavior.rule??true,event,conditions))return {matched:false,reason:'rule'}
     const chain=typeof behavior.strategy==='string'?[{operation:behavior.strategy}]:behavior.strategy??[]
     for(const step of chain){const op=operations.get(step.operation);if(!op)fail('OPERATION_UNAVAILABLE',step.operation);if(preview&&!op.readOnly)fail('PREVIEW_WRITE_REFUSED',step.operation)}
     const key=JSON.stringify([id,mode,scope,event.eventId]),operationId=createHash('sha256').update(key).digest('hex'),strategyRevision=createHash('sha256').update(JSON.stringify(chain.map(step=>[step,operations.get(step.operation).version]))).digest('hex')
-    const lifetime=this.manager.lifetimes.get(this.manager.adapters.get(config.adapterId))?.signal
+    const lifetime=generation?.signal
+    lifetime?.throwIfAborted()
+    if(this.manager.lifetimes.get(adapter)!==generation)fail('SOURCE_UNAVAILABLE','Source registration changed')
     if(lifetime)signal=signal?AbortSignal.any([signal,lifetime]):lifetime
     if(!preview&&(this.running.has(key)||this.manager.traces.some(t=>t.executionKey===key&&['completed','failed'].includes(t.phase))))return {matched:true,duplicate:true}
     const fact={adapterId:config.adapterId,id,eventId:event.eventId,sessionId:scope.sessionId,turn:event.turn,turnKind:event.turnKind??'unknown',requestId:event.requestId??event.eventId,executionKey:key,configRevision:revision,strategyRevision}
     if(!preview){this.running.add(key);this.manager.recordTrace({...fact,phase:'started'});this.manager.recordTrace({...fact,phase:'triggered'})}
     try{
       let value=await this.manager.read({adapterId:config.adapterId,id,scope,signal})
-      const resourceRevision=value?.revision??null
+      if(value==null)fail('RESOURCE_UNAVAILABLE',id)
+      const resourceRevision=value.revision??null
       for(const step of chain){signal?.throwIfAborted();value=await operations.get(step.operation).run({id,operationId,value:clone(value),event:clone(event),config:clone(config),params:clone(step.params??{}),preview,signal});signal?.throwIfAborted()}
       if(!preview)this.manager.recordTrace({...fact,phase:'completed'})
       return {matched:true,value,resourceRevision,configRevision:revision,strategyRevision,preview}

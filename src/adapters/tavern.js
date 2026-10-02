@@ -7,9 +7,15 @@ export function tavernWorldBooks({baseUrl,fetchImpl=fetch}){
   return {id:'tavern.world-books',name:'Tavern 世界书',authority:'tavern.world-book-library',
     async list({scope,signal}){
       const {worldBooks}=await get(scope.sessionId?'/world-book-selection?sessionId='+encodeURIComponent(scope.sessionId):'/world-books',signal)
-      let records=[]
-      if(scope.sessionId)records=(await get('/traces?sessionId='+encodeURIComponent(scope.sessionId),signal)).records??[]
-      return worldBooks.map(book=>({id:'world-book:'+book.id,name:book.name,type:'world-book',revision:book.updatedAt??null,nativeBehavior:true,facts:records.flatMap(record=>(record.worldBooks??[]).filter(w=>w.resource?.id===book.id).map((w,i)=>({id:'world-book:'+book.id,adapterId:'tavern.world-books',eventId:`${record.id??record.createdAt??record.timestamp}:${i}`,phase:w.decisions?.some(d=>d.included)?'triggered':'skipped',sessionId:scope.sessionId,turn:record.turn,turnKind:'unknown',detail:'Tavern world-book evaluation; final request application is not established by this record'})))}))
+      let records=[],active=[]
+      if(scope.sessionId){
+        const suffix='?sessionId='+encodeURIComponent(scope.sessionId)
+        records=(await get('/traces'+suffix,signal)).records??[]
+        active=(await get('/active'+suffix,signal)).resources?.worldBooks??[]
+      }
+      const books=new Map([...worldBooks,...active].map(book=>[book.id,book]))
+      for(const record of records)for(const w of record.worldBooks??[])if(w.resource?.id&&!books.has(w.resource.id))books.set(w.resource.id,w.resource)
+      return [...books.values()].map(book=>({id:'world-book:'+book.id,name:book.name??book.id,type:'world-book',revision:book.updatedAt??null,nativeBehavior:true,facts:records.flatMap(record=>(record.worldBooks??[]).filter(w=>w.resource?.id===book.id).map((w,i)=>({id:'world-book:'+book.id,adapterId:'tavern.world-books',eventId:`${record.id??record.recordedAt??'unknown'}:${i}`,phase:w.decisions?.some(d=>d.decision==='included')?'triggered':'skipped',sessionId:scope.sessionId,...(record.turn==null?{}:{turn:record.turn}),turnKind:'unknown',detail:'Tavern world-book evaluation; final request application is not established by this record'})))}))
     },
     async read({id,signal}){if(!id.startsWith('world-book:'))return null;const {worldBook}=await get('/world-books/'+encodeURIComponent(id.slice(11)),signal);return {id,name:worldBook.name,type:'world-book',content:worldBook,revision:createHash('sha256').update(JSON.stringify(worldBook)).digest('hex'),authority:'tavern.world-book-library'}},
     validateConfig(c){if(c.type&&c.type!=='world-book')fail('TYPE_MISMATCH','World-book source type is world-book');if(c.store||c.retrieve)fail('UNSUPPORTED_POLICY','World-book usage remains controlled by Tavern; management policy execution is not exposed by its public API')},

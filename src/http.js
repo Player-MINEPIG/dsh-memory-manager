@@ -1,7 +1,10 @@
 import { fail } from './config.js'
-export function handler(manager){return async(req,res)=>{
+export function handler(manager,connection){return async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('Cache-Control','no-store')
   try{
+    if(typeof connection?.admit!=='function')fail('FORBIDDEN','Host admission is unavailable')
+    const admission=connection.admit(req)
+    if('rejection' in admission){res.statusCode=admission.rejection;res.end(JSON.stringify({error:{code:'HOST_ADMISSION_DENIED',message:'Host admission denied'}}));return}
     const url=new URL(req.url,'http://localhost'),path=url.pathname.split('/').pop(),q=Object.fromEntries(url.searchParams)
     if(req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)fail('FORBIDDEN','Cross-origin access denied')
     if(req.headers['sec-fetch-site']==='cross-site')fail('FORBIDDEN','Cross-site access denied')
