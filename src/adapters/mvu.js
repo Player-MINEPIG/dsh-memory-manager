@@ -13,6 +13,7 @@ export function installMvu(manager,service,usage){
   let disposed=false
   const unuse=service.registerUsage(async request=>{
     if(disposed)return {enabled:false,reason:'manager-unloaded'}
+    const document=manager.configuration.document,reloadEpoch=manager.configuration.pending,lifetime=manager.lifetimes.get(adapter),conditions=new Map(usage.conditions)
     const {config,revision}=manager.getConfig(request.id)
     if(request.managementMode==='managed'&&(!config||manager.configuration.error))return {enabled:false,reason:'config-unavailable'}
     if(!config||request.managementMode!=='managed')return undefined
@@ -24,8 +25,9 @@ export function installMvu(manager,service,usage){
     if(!behavior||!(Array.isArray(behavior.on)?behavior.on:[behavior.on]).includes(request.on))return {enabled:false,reason:'timing'}
     const enabled=await usage.rule(behavior.rule??true,{...request.event,on:request.on,scope:request.scope})
     if(disposed)return {enabled:false,reason:'manager-unloaded'}
-    if(manager.configuration.error||manager.configuration.document.revision!==revision)return {enabled:false,reason:'config-changed'}
-    return {enabled,configRevision:revision,strategy:behavior.strategy,reason:enabled?'matched':'rule'}
+    const checkCurrent=()=>!disposed&&!lifetime?.signal.aborted&&manager.adapters.get(adapter.id)===adapter&&manager.lifetimes.get(adapter)===lifetime&&!manager.configuration.error&&manager.configuration.document===document&&manager.configuration.document.revision===revision&&manager.configuration.pending===reloadEpoch&&conditions.size===usage.conditions.size&&[...conditions].every(([id,condition])=>usage.conditions.get(id)===condition)
+    if(!checkCurrent())return {enabled:false,reason:'config-changed'}
+    return {enabled,configRevision:revision,strategy:behavior.strategy,reason:enabled?'matched':'rule',checkCurrent}
   })
   return()=>{disposed=true;unuse();uncondition();uncause();stop()}
 }

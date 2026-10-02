@@ -114,3 +114,26 @@ test('real DSH request and durable MVU reply pass through actual manager usage a
   assert(agent.session.deriveMessages().some(m=>m.content?.some(b=>b.text==='ONE')))
  }finally{await ctx.fiber.dispose();await rm(dir,{recursive:true,force:true})}
 })
+
+test('real MVU cannot commit an old manager permit after actual config reload during the final source await',{skip:!root},async t=>{
+ for(const phase of ['policy-await','final-scope-await'])await t.test(phase,async sub=>{
+  const f=await cardFixture(sub);f.grant();const {capability}=await f.bind()
+  let enter,release;const entered=new Promise(r=>enter=r)
+  if(phase==='policy-await'){
+   f.usage.registerCondition({id:'reload-window',test:async()=>{enter();await new Promise(r=>release=r);return true}});f.policy.store.rule='reload-window'
+  }else{
+   const original=f.service.resolveScope;let calls=0
+   f.service.resolveScope=async scope=>{const evidence=await original(scope);if(++calls===2){enter();await new Promise(r=>release=r)}return evidence}
+  }
+  await f.configure([f.policy])
+  const before=await f.service.read({id:'mvu:card',scope:{sessionId:'s'}})
+  const pending=f.service.cardWrite({capability,operation:'patch',value:[{op:'delta',path:'/hp',value:-2}],expectedRevision:before.revision,operationId:'reload-race',cause:'user-interaction'})
+  await entered
+  // Real file reload through Configuration, with the same registered usage handler.
+  const deny=structuredClone(f.policy);deny.store.rule=false;await f.configure([deny]);release()
+  await assert.rejects(()=>pending)
+  const after=await f.service.read({id:'mvu:card',scope:{sessionId:'s'}})
+  assert.equal(after.revision,before.revision);assert.deepEqual(after.content,before.content)
+  assert(!f.manager.traces.some(e=>e.phase==='applied'))
+ })
+})

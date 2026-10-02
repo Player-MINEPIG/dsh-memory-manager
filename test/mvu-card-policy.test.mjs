@@ -39,3 +39,11 @@ test('source denied and committed card facts remain separate and preserve cause 
  t.observe({...base,eventId:'committed',cause:'user-interaction',phase:'applied',detail:'state-committed',revision:4})
  assert.equal(t.m.traces.at(-1).detail,'state-committed');assert.equal(t.m.traces.at(-1).on,'card_variable_update');assert.equal(t.writes(),0)
 })
+
+test('allowed MVU decisions carry a private synchronous lease invalidated by reload and unload',async()=>{
+ const t=setup(),decision=await t.decide(t.request)
+ assert.equal(decision.enabled,true);assert.equal(decision.checkCurrent(),true);assert.equal(typeof decision.checkCurrent(),'boolean')
+ t.m.configuration.pending=Promise.resolve();assert.equal(decision.checkCurrent(),false)
+ const current=await t.decide(t.request);assert.equal(current.checkCurrent(),true)
+ t.dispose();assert.equal(current.checkCurrent(),false)
+})
