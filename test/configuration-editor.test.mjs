@@ -54,3 +54,19 @@ test('ownership claimed during awaited validation prevents publication',async t=
  const saving=m.saveEntry(args(m,{...doc.entries[0],blacklist:[]}));await entered;await m.query({adapterId:['b']});release()
  await assert.rejects(saving,{code:'VALIDATION_FAILED'});assert.equal(JSON.parse(await readFile(path,'utf8')).revision,1);assert.equal(m.configuration.document.revision,1)
 })
+test('final revision growth cannot publish an oversized document and old revision remains reloadable',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'dmm-size-boundary-'));t.after(()=>rm(dir,{recursive:true,force:true}));const path=join(dir,'config.json')
+ const document={schemaVersion:1,revision:9,entries:[{id:'a:1',adapterId:'a',type:'text'}],presets:{padding:{type:''}}}
+ document.presets.padding.type='x'.repeat(2_000_000-JSON.stringify(document).length)
+ const original=JSON.stringify(document);assert.equal(original.length,2_000_000);await writeFile(path,original)
+ const m=await new MemoryManager({configPath:path}).init();t.after(()=>m.dispose());m.registerAdapter({id:'a',authority:'synthetic',list:async()=>[],read:async()=>null,validateConfig:async()=>{}})
+ const current=m.configuration.document
+ await assert.rejects(m.saveEntry({id:'a:1',adapterId:'a',expectedRevision:9,entry:{id:'a:1',adapterId:'a',type:'data'}}),{code:'INVALID_CONFIG'})
+ assert.equal(await readFile(path,'utf8'),original);assert.equal(m.configuration.document,current);assert.equal(m.configuration.error,null);assert.equal(m.configuration.document.revision,9)
+ assert.deepEqual(await m.reload(),{revision:9,unchanged:true});assert.deepEqual(await readdir(dir),['config.json'])
+ // Adjacent valid boundary still publishes and reloads at revision 10.
+ document.presets.padding.type=document.presets.padding.type.slice(0,-1);await writeFile(path,JSON.stringify(document))
+ const n=await new MemoryManager({configPath:path}).init();t.after(()=>n.dispose());n.registerAdapter({id:'a',authority:'synthetic',list:async()=>[],read:async()=>null,validateConfig:async()=>{}})
+ assert.equal((await n.saveEntry({id:'a:1',adapterId:'a',expectedRevision:9,entry:{id:'a:1',adapterId:'a',type:'data'}})).revision,10)
+ assert.equal(JSON.stringify(JSON.parse(await readFile(path,'utf8'))).length,2_000_000);assert.deepEqual(await n.reload(),{revision:10,unchanged:true})
+})

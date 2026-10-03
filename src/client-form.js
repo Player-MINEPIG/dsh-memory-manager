@@ -14,3 +14,5 @@ export function importEntry(raw,row){
  for(const mode of ['store','retrieve'])if(mode in entry){const value=entry[mode];if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!['on','rule','strategy'].includes(k)))throw Error(`${mode} 必须是仅含 on、rule、strategy 的对象。`)}
  return formFrom(entry)
 }
+
+export function fieldOrigin(config,origins,field){return at(config,field)===undefined?undefined:origins[field]}

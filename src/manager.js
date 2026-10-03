@@ -80,7 +80,7 @@ export class MemoryManager {
     const inScope=t=>!scope.sessionId||t.sessionId===scope.sessionId
     const facets={turns:[...new Set([...this.traces,...records.flatMap(r=>r.facts??[])].filter(inScope).filter(t=>t.turn!=null).map(t=>String(t.turn)))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}))}
     const filter=t=>inScope(t)&&matches(turns,t.turn)&&matches(kinds,t.turnKind)
-    for(const fact of this.traces.filter(filter))if(matches(sources,fact.adapterId)&&!records.some(r=>r.id===fact.id))records.push({id:fact.id,type:'unknown',adapterId:fact.adapterId,missing:true,capabilities:{edit:false,copy:false}})
+    for(const fact of this.traces.filter(filter))if(matches(sources,fact.adapterId)&&!records.some(r=>r.id===fact.id))records.push({id:fact.id,adapterId:fact.adapterId,missing:true,capabilities:{edit:false,copy:false}})
     const rows=records.map(r=>{
       const policy=this.getConfig(r.id),facts=[...this.traces,...(r.facts??[])].filter(t=>t.id===r.id&&t.adapterId===r.adapterId&&filter(t)),running=[...this.active.values()].some(t=>t.id===r.id&&filter(t))
       const state=running?'running':facts.some(t=>['triggered','applied','started'].includes(t.phase))?'past':'never'

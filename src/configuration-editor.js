@@ -72,6 +72,9 @@ export function saveEntry(manager,args){
   if(isDeepStrictEqual(next,current)){configuration.error=null;return {...configurationSnapshot(manager,args),unchanged:true,validation:report}}
   next.revision=current.revision+1
   if(!Number.isSafeInteger(next.revision))fail('REVISION_CONFLICT','配置版本已超出可安全递增的范围。')
+  // Revision growth changes the serialized document too (e.g. 9 -> 10).
+  // Validate the exact final document before creating any temporary file.
+  validateDocument(next)
   const temp=configuration.path+'.tmp-'+randomUUID()
   let file
   try{
