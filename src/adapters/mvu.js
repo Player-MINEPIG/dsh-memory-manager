@@ -1,3 +1,4 @@
+import {nativeDependencyLease} from './native-dependency.js'
 import {capabilityErrors} from '../capabilities.js'
 import {builtinPresets} from '../builtin-presets.js'
 import { applies, fail } from '../config.js'
@@ -17,6 +18,7 @@ export function installMvu(manager,service,usage){
   let disposed=false
   const unuse=service.registerUsage(async request=>{
     if(disposed)return {enabled:false,reason:'manager-unloaded'}
+    const native=nativeDependencyLease(manager,adapter,request,()=>disposed);if(native)return native
     const document=manager.configuration.document,reloadEpoch=manager.configuration.pending,lifetime=manager.lifetimes.get(adapter),conditions=new Map(usage.conditions),catalogRevision=manager.optionCatalog({adapterId:adapter.id}).catalogRevision
     const {config,revision}=manager.getConfig(request.id)
     if(request.managementMode==='managed'&&(!config||manager.configuration.error))return {enabled:false,reason:'config-unavailable'}

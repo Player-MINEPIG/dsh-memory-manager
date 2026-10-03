@@ -1,3 +1,4 @@
+import {nativeDependencyLease} from './native-dependency.js'
 import {capabilityErrors} from '../capabilities.js'
 import {applies,clone} from '../config.js'
 export function installManagedSources(manager,service,usage){
@@ -10,6 +11,7 @@ export function installManagedSources(manager,service,usage){
    let disposed=false
    const unuse=adapter.registerUsage(async request=>{
     if(disposed)return {enabled:false,reason:'manager-unloaded'}
+    const native=nativeDependencyLease(manager,adapter,request,()=>disposed);if(native)return native
     if(request.managementMode!=='managed')return undefined
     const document=manager.configuration.document,epoch=manager.configuration.pending,lifetime=manager.lifetimes.get(adapter),conditions=new Map(usage.conditions),catalogRevision=manager.optionCatalog({adapterId:adapter.id}).catalogRevision
     const {config,revision}=manager.getConfig(request.id)
