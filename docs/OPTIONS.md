@@ -59,6 +59,10 @@ Local declarative named combinations reference these registered capabilities; lo
 
 ## 使用与内置预设
 
+编辑选项按资源提供方、存储／读取模式及当前草稿的生效类型判断可用性；预设明确提供的 type 优先。切换预设时以候选预设的 type（未提供时使用本地 type）判断，不沿用旧预设的覆盖值。已有不兼容值继续显示并保留，可明确替换或移除；筛选仍可选择这些历史值。编辑已知条件参数会保留 condition 对象中已有的扩展成员。
+
+“清空本地字段”仅删除该子字段，有意设置的空 store/retrieve 对象仍会保留。“移除本地存储配置／读取配置”删除整个本地模式及其存在标记；预设引用不变，预设提供的模式仍会生效，需调整预设引用才能去除。保存或校验期间不能移除模式。
+
 点击配置字段进入独立选项页，搜索名称或说明，再按资源提供方或预设缩小范围。选择仅修改草稿；返回后先校验，再保存。筛选页同字段内 OR、不同字段间 AND，空选不限。筛选只比较值，不运行条件。未知条件、操作和参数保留原值；可明确替换或移除，不要求手输 JSON。正文编辑遵循来源格式，是独立操作。
 
 | 管理预设 ID | 来源与明确覆盖的字段 |
@@ -104,3 +108,5 @@ Skill 的模型贡献需选中 `memory-manager.resources` 装配来源。世界�
 A trusted source may request the same `before_model_request` usage decision for a dependency resource, with `event.usage:'prompt-template-dependency'` and `event.consumer:{adapterId:'tavern.prompt-templates',id:<actual-template-id>}` plus preview/turn/step. These fields are context only. Manager evaluates the dependency's own adapter, scopes, rule and supported strategy, never the consumer's policy as a substitute. Source `resolvePromptDependency(...)` returns `{content,revision,configRevision,checkCurrent}` only within Host code; the source binds selection, content revision, management mode and manager lease. The template source must lazily acquire only used dependencies, bound recursion/count/depth, and synchronously recheck every dependency lease after its final await. VM-provided claims are not proofs. Missing source implementation must report unsupported. Acceptance of this event shape does not certify any particular Tavern release's helper implementation.
 
 For this dependency API only, registered manager listeners explicitly acknowledge native reads with `{enabled:true,configRevision:null,strategy:<source's fixed retrieve chain>,checkCurrent}`. They do not apply managed entry scopes/rules to a native resource or change ownership. Ordinary native events still abstain. The native acknowledgement expires on manager/source unload, ownership conflict, configuration document/reload/error-state changes and capability generation changes. A pre-existing manager configuration error does not itself convert or deny native source authority; changing that state revokes the outstanding acknowledgement. Target sources must still apply their own scope/content/selection/management-mode lease and synchronously check all registered acknowledgements. Managed resources retain their own configuration/rule denial and never use this native path.
+
+本地 catalog 的 rules/strategies 必须为数组；选项若提供 adapterIds/modes，必须为合法数组，description 必须为文本。非法描述在发布新版本前被拒绝，当前有效配置与选项目录保持可用。

@@ -16,3 +16,13 @@ export function importEntry(raw,row){
 }
 
 export function fieldOrigin(config,origins,field){return at(config,field)===undefined?undefined:origins[field]}
+
+// Removing a section is distinct from deliberately keeping an empty object.
+export function removeModeFrom(form,mode){
+ if(!['store','retrieve'].includes(mode))throw Error('Unknown configuration mode')
+ return {...form,['__'+mode+'Present']:false,...Object.fromEntries(['on','rule','strategy'].map(child=>[mode+'.'+child,'']))}
+}
+export function effectiveDraftType(form,presets=[]){
+ const preset=presets.find(p=>p.id===form.preset)?.configuration
+ return preset&&Object.hasOwn(preset,'type')?preset.type:form.type||undefined
+}

@@ -52,12 +52,13 @@ export function validateDocument(doc) {
   if(doc.catalog!==undefined){
     if(!object(doc.catalog)||Object.keys(doc.catalog).some(k=>!['rules','strategies'].includes(k)))fail('INVALID_CONFIG','Catalog supports named rules and strategies only')
     for(const [kind,field] of [['rules','rule'],['strategies','strategy']]){
-      const options=doc.catalog[kind]??[],seen=new Set();if(!Array.isArray(options)||options.length>200)fail('INVALID_CONFIG','Catalog options must be a bounded array')
+      const options=Object.hasOwn(doc.catalog,kind)?doc.catalog[kind]:[],seen=new Set();if(!Array.isArray(options)||options.length>200)fail('INVALID_CONFIG','Catalog options must be a bounded array')
       for(const option of options){
         if(!object(option)||typeof option.id!=='string'||!option.id||seen.has(option.id)||typeof option.label!=='string'||Object.keys(option).some(k=>!['id','label','description','adapterIds','modes','value'].includes(k)))fail('INVALID_CONFIG','Named catalog options require unique id, label and value')
         seen.add(option.id)
-        if(option.adapterIds&&(!Array.isArray(option.adapterIds)||option.adapterIds.some(v=>typeof v!=='string')))fail('INVALID_CONFIG','Invalid catalog adapterIds')
-        if(option.modes&&(!Array.isArray(option.modes)||option.modes.some(v=>!['store','retrieve'].includes(v))))fail('INVALID_CONFIG','Invalid catalog modes')
+        if(Object.hasOwn(option,'description')&&typeof option.description!=='string')fail('INVALID_CONFIG','Invalid catalog description')
+        if(Object.hasOwn(option,'adapterIds')&&(!Array.isArray(option.adapterIds)||option.adapterIds.some(v=>typeof v!=='string')))fail('INVALID_CONFIG','Invalid catalog adapterIds')
+        if(Object.hasOwn(option,'modes')&&(!Array.isArray(option.modes)||option.modes.some(v=>!['store','retrieve'].includes(v))))fail('INVALID_CONFIG','Invalid catalog modes')
         if(option.value===undefined)fail('INVALID_CONFIG','Catalog value is required')
         validateFields({retrieve:{[field]:option.value}})
       }
