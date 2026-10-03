@@ -1,3 +1,6 @@
+import {capabilityErrors} from './capabilities.js'
+import {parameterErrors} from './option-schema.js'
+import {presetDefinitions} from './builtin-presets.js'
 import {readFile,open,unlink} from 'node:fs/promises'
 import {readFileSync,renameSync} from 'node:fs'
 import {randomUUID} from 'node:crypto'
@@ -12,7 +15,7 @@ export function configurationSnapshot(manager,{id,adapterId}){
  identity({id,adapterId})
  const doc=manager.configuration.document,local=doc.entries.find(e=>e.id===id)??null
  if(local&&local.adapterId!==adapterId)fail('OWNERSHIP_CONFLICT','该资源已绑定其他提供方。')
- return {id,adapterId,revision:doc.revision,local:clone(local),...effective(doc,id),presets:clone(doc.presets),configError:manager.configuration.error,sourceAvailable:manager.adapters.has(adapterId)}
+ return {id,adapterId,revision:doc.revision,local:clone(local),...effective(doc,id),presets:clone(presetDefinitions(doc)),configError:manager.configuration.error,sourceAvailable:manager.adapters.has(adapterId)}
 }
 function proposedDocument(manager,{id,adapterId,entry,expectedRevision}){
  identity({id,adapterId,entry})
@@ -25,30 +28,31 @@ function proposedDocument(manager,{id,adapterId,entry,expectedRevision}){
  const entries=existing?doc.entries.map(e=>e.id===id?clone(entry):e):[...doc.entries,clone(entry)]
  return validateDocument({...clone(doc),entries})
 }
-function conditionNames(rule){
- if(typeof rule==='string')return [rule]
+function conditionReferences(rule){
+ if(typeof rule==='string')return [{id:rule,params:{}}]
  if(!rule||typeof rule!=='object')return []
- if(rule.condition)return [rule.condition.id]
- if(rule.not!==undefined)return conditionNames(rule.not)
- return (rule.all??rule.any??rule.at_least?.conditions??[]).flatMap(conditionNames)
+ if(rule.condition)return [{id:rule.condition.id,params:rule.condition.params??{}}]
+ if(rule.not!==undefined)return conditionReferences(rule.not)
+ return (rule.all??rule.any??rule.at_least?.conditions??[]).flatMap(conditionReferences)
 }
 async function inspect(manager,args,{duringSave=false}={}){
- const doc=manager.configuration.document,epoch=manager.configuration.pending,diagnostics=[]
+ const doc=manager.configuration.document,epoch=manager.configuration.pending,diagnostics=[],catalogRevision=manager.optionCatalog({id:args.id,adapterId:args.adapterId}).catalogRevision
  const add=(level,code,field,message)=>diagnostics.push({level,code,field,message})
  let next
- try{next=proposedDocument(manager,args)}catch(e){return {report:{valid:false,revision:doc.revision,diagnostics:[{level:'error',code:e.code??'INVALID_CONFIG',field:'configuration',message:e.message}]},checkCurrent:()=>false}}
+ try{if(args.expectedCatalogRevision&&args.expectedCatalogRevision!==catalogRevision)fail('CATALOG_CHANGED','选项能力已变化，请重新查看并校验草稿。');next=proposedDocument(manager,args)}catch(e){return {report:{valid:false,revision:doc.revision,diagnostics:[{level:'error',code:e.code??'INVALID_CONFIG',field:'configuration',message:e.message}]},checkCurrent:()=>false}}
  const composed=effective(next,args.id),adapter=manager.adapters.get(args.adapterId),lifetime=manager.lifetimes.get(adapter),usage=manager.usage
  const conditions=new Map(usage?.conditions??[]),operations=new Map(usage?.operations??[])
  const owns=()=>{try{manager.assertOwner(adapter,args.id);return true}catch{return false}}
- const checkCurrent=()=>owns()&&manager.configuration.document===doc&&(duringSave||manager.configuration.pending===epoch)&&manager.adapters.get(args.adapterId)===adapter&&manager.lifetimes.get(adapter)===lifetime&&!lifetime?.signal.aborted&&conditions.size===(usage?.conditions.size??0)&&[...conditions].every(([k,v])=>usage.conditions.get(k)===v)&&operations.size===(usage?.operations.size??0)&&[...operations].every(([k,v])=>usage.operations.get(k)===v)
+ const checkCurrent=()=>manager.optionCatalog({id:args.id,adapterId:args.adapterId}).catalogRevision===catalogRevision&&owns()&&manager.configuration.document===doc&&(duringSave||manager.configuration.pending===epoch)&&manager.adapters.get(args.adapterId)===adapter&&manager.lifetimes.get(adapter)===lifetime&&!lifetime?.signal.aborted&&conditions.size===(usage?.conditions.size??0)&&[...conditions].every(([k,v])=>usage.conditions.get(k)===v)&&operations.size===(usage?.operations.size??0)&&[...operations].every(([k,v])=>usage.operations.get(k)===v)
  if(!adapter)add('error','SOURCE_UNAVAILABLE','adapterId','提供方当前未注册，无法判定组合是否受支持；配置未保存。')
  else if(typeof adapter.validateConfig!=='function')add('error','VALIDATION_UNAVAILABLE','adapterId','提供方没有只读配置校验接口，可行性不可判定；配置未保存。')
  else try{manager.assertOwner(adapter,args.id);await adapter.validateConfig(clone(composed.config));add('info','SOURCE_VALIDATED','adapterId','提供方配置校验通过。')}catch(e){add('error',e.code??'SOURCE_VALIDATION_FAILED','configuration',`提供方拒绝此配置：${e.message}`)}
+ if(adapter)for(const error of capabilityErrors(adapter,composed.config,conditions,operations))add('error','CAPABILITY_MISMATCH',error.field,error.message)
  for(const mode of ['store','retrieve']){
   const behavior=composed.config[mode]
   if(!behavior)continue
-  for(const name of new Set(conditionNames(behavior.rule)))if(!conditions.has(name))add('error','CONDITION_UNREGISTERED',`${mode}.rule`,`条件尚未注册：${name}`)
-  if(adapter?.strategyOwner!=='source')for(const step of typeof behavior.strategy==='string'?[{operation:behavior.strategy}]:behavior.strategy??[])if(!operations.has(step.operation))add('error','OPERATION_UNREGISTERED',`${mode}.strategy`,`操作尚未注册：${step.operation}`)
+  for(const ref of conditionReferences(behavior.rule)){const condition=conditions.get(ref.id);if(!condition)add('error','CONDITION_UNREGISTERED',`${mode}.rule`,`条件尚未注册：${ref.id}`);else if(condition.option?.parameters)for(const message of parameterErrors(condition.option.parameters,ref.params,ref.id))add('error','INVALID_PARAMETERS',`${mode}.rule`,message)}
+  if(adapter?.strategyOwner!=='source')for(const step of typeof behavior.strategy==='string'?[{operation:behavior.strategy}]:behavior.strategy??[]){const operation=operations.get(step.operation);if(!operation)add('error','OPERATION_UNREGISTERED',`${mode}.strategy`,`操作尚未注册：${step.operation}`);else if(operation.option?.parameters)for(const message of parameterErrors(operation.option.parameters,step.params??{},step.operation))add('error','INVALID_PARAMETERS',`${mode}.strategy`,message)}
   if(behavior.on!==undefined)add('unknown','EVENT_CONTEXT_UNCHECKED',`${mode}.on`,'已检查配置格式；此校验不触发事件，实际事件可达性和所需上下文须运行时确认。')
  }
  if(!composed.config.whitelist.length)add('info','EMPTY_WHITELIST','whitelist','白名单为空，当前配置不会在任何范围生效。')

@@ -5,6 +5,7 @@ export function tavernWorldBooks({baseUrl,fetchImpl=fetch}){
   if(!['localhost','127.0.0.1','[::1]'].includes(base.hostname)||!['http:','https:'].includes(base.protocol)||base.username||base.password)fail('INVALID_ORIGIN','Tavern adapter requires a configured loopback origin')
   const get=async(path,signal)=>{const r=await fetchImpl(new URL('/pmp-dsh-tavern/api/v1'+path,base),{signal});const value=await r.json();if(!r.ok||!value.ok)fail('TAVERN_UNAVAILABLE',typeof value.error==='string'?value.error:value.error?.message??`HTTP ${r.status}`);return value}
   return {id:'tavern.world-books',name:'Tavern 世界书',authority:'tavern.world-book-library',
+    optionCatalog:{version:1,types:[{id:'world-book',label:'世界书'}],modes:{store:{supported:false,reason:'当前 HTTP 来源仅提供只读资源。'},retrieve:{supported:false,reason:'世界书由 Tavern 原生路径控制；需新版 tavernMemorySources 管理权接口。'}}},
     describeScope:scope=>scope.sessionId?'当前会话选择、预览及使用记录中的世界书。':'Tavern 世界书库中的已导入资源。',
     async list({scope,signal}){
       const {worldBooks}=await get(scope.sessionId?'/world-book-selection?sessionId='+encodeURIComponent(scope.sessionId):'/world-books',signal)

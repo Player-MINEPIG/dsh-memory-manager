@@ -9,7 +9,7 @@ export function registerRequestSource(manager,registry,usage){
   const doc=structuredClone(manager.configuration.document),blocks=[],diagnostics=[]
   for(const entry of doc.entries){
    // MVU owns its native source and commit path; never emit or update it twice.
-   if(entry.adapterId==='tavern.mvu')continue
+   if(entry.adapterId==='tavern.mvu'||manager.adapters.get(entry.adapterId)?.strategyOwner==='source')continue
    const snapshot=effective(doc,entry.id)
    try {
    const result=await usage.trigger({id:entry.id,configurationSnapshot:snapshot,mode:'retrieve',preview:true,signal:context.signal,event:{on:'before_model_request',eventId:'readonly-resolver',scope:{sessionId:context.sessionId},turn:context.turn,step:context.step,nativeMessages:context.nativeMessages}})

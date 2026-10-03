@@ -2,8 +2,10 @@ import { mkdir,readFile,writeFile,rename } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { Configuration,clone,fail,effective,applies,safe } from './config.js'
 import {configurationFilterFields,filterValues,validateFilters,matchesConfigurationFilters} from './filters.js'
+import {optionCatalog,validateAdapterCatalog} from './option-catalog.js'
 import {configurationSnapshot,validateEntry,saveEntry} from './configuration-editor.js'
 export class MemoryManager {
+  catalogGeneration=0
   protocolVersion=1
   adapters=new Map(); lifetimes=new Map(); owners=new Map(); reservations=new Map(); traces=[]; active=new Map(); diagnostics=[]; pending=Promise.resolve()
   constructor({configPath,journalPath}) {this.configuration=new Configuration(configPath);this.journalPath=journalPath}
@@ -14,13 +16,14 @@ export class MemoryManager {
   }
   registerAdapter(adapter) {
     if(!adapter?.id||!adapter.authority||typeof adapter.list!=='function'||typeof adapter.read!=='function'||this.adapters.has(adapter.id)) fail('INVALID_ADAPTER','Adapter requires unique id, authority, list and read')
+    validateAdapterCatalog(adapter.optionCatalog)
     const lifetime=new AbortController();this.lifetimes.set(adapter,lifetime)
-    this.adapters.set(adapter.id,adapter)
+    this.adapters.set(adapter.id,adapter);this.catalogGeneration++
     const validation=this.validateAdapter(adapter)
     validation.catch(e=>{if(!lifetime.signal.aborted)this.diagnostics.push({adapterId:adapter.id,code:e.code??'SOURCE_CONFIG_INVALID',message:e.message})})
     let stop
     try{stop=adapter.observe?.(event=>{if(lifetime.signal.aborted||this.lifetimes.get(adapter)!==lifetime||this.adapters.get(adapter.id)!==adapter)return;try{this.recordTrace({...event,adapterId:adapter.id})}catch(e){this.diagnostics.push({adapterId:adapter.id,code:'INVALID_SOURCE_TRACE',message:e.message})}})}catch(e){this.adapters.delete(adapter.id);lifetime.abort();throw e}
-    return ()=>{lifetime.abort();stop?.();if(this.lifetimes.get(adapter)!==lifetime)return;for(const [id,reservation] of this.reservations)if(reservation.adapter===adapter)this.reservations.delete(id);for(const [id,owner] of this.owners)if(owner===adapter)this.owners.delete(id);if(this.adapters.get(adapter.id)===adapter)this.adapters.delete(adapter.id);for(const [k,v] of this.active)if(v.adapterId===adapter.id)this.active.delete(k)}
+    return ()=>{lifetime.abort();stop?.();if(this.lifetimes.get(adapter)!==lifetime)return;for(const [id,reservation] of this.reservations)if(reservation.adapter===adapter)this.reservations.delete(id);for(const [id,owner] of this.owners)if(owner===adapter)this.owners.delete(id);if(this.adapters.get(adapter.id)===adapter){this.adapters.delete(adapter.id);this.catalogGeneration++};for(const [k,v] of this.active)if(v.adapterId===adapter.id)this.active.delete(k)}
   }
   async validateAdapter(adapter) {
     for(const entry of this.configuration.document.entries)if(entry.adapterId===adapter.id)await adapter.validateConfig?.(this.getConfig(entry.id).config)
@@ -62,6 +65,7 @@ export class MemoryManager {
       this.pending=this.pending.catch(()=>{}).then(async()=>{await mkdir(dirname(this.journalPath),{recursive:true});const temp=`${this.journalPath}.tmp`;await writeFile(temp,data,{mode:0o600});await rename(temp,this.journalPath)}).catch(e=>{this.diagnostics.push({code:'JOURNAL_WRITE_FAILED',message:e.message})})
     }
   }
+  optionCatalog(args) {return optionCatalog(this,args)}
   configurationSnapshot(args) {return configurationSnapshot(this,args)}
   validateEntry(args) {return validateEntry(this,args)}
   saveEntry(args) {return saveEntry(this,args)}

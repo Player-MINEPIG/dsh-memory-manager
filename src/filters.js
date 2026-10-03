@@ -1,10 +1,7 @@
 import {fail} from './config.js'
 export const configurationFilterFields=['id','type','preset','whitelist','blacklist','store.on','store.rule','store.strategy','retrieve.on','retrieve.rule','retrieve.strategy']
-export function canonical(value){
- if(Array.isArray(value))return '['+value.map(canonical).join(',')+']'
- if(value&&typeof value==='object')return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+canonical(value[k])).join(',')+'}'
- return JSON.stringify(value)
-}
+export {canonical} from './canonical.js'
+import {canonical} from './canonical.js'
 export function filterValues(row,field){
  const value=field==='id'?row.id:field==='type'?(row.config?.type??row.type):field.split('.').reduce((v,k)=>v?.[k],row.config)
  if(value===undefined||value===null)return []

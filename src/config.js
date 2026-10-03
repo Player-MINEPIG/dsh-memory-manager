@@ -1,3 +1,4 @@
+import {presetDefinitions} from './builtin-presets.js'
 import { readFile } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 export const clone = value => structuredClone(value)
@@ -48,12 +49,26 @@ export function validateDocument(doc) {
   if (!object(doc)||doc.schemaVersion!==1||!Number.isInteger(doc.revision)||doc.revision<1||!Array.isArray(doc.entries)||!object(doc.presets)) fail('INVALID_CONFIG','Expected schemaVersion 1, positive revision, entries and presets')
   if (JSON.stringify(doc).length>2_000_000) fail('INVALID_CONFIG','Configuration exceeds 2 MB')
   for (const p of Object.values(doc.presets)) validateFields(p,true)
+  if(doc.catalog!==undefined){
+    if(!object(doc.catalog)||Object.keys(doc.catalog).some(k=>!['rules','strategies'].includes(k)))fail('INVALID_CONFIG','Catalog supports named rules and strategies only')
+    for(const [kind,field] of [['rules','rule'],['strategies','strategy']]){
+      const options=doc.catalog[kind]??[],seen=new Set();if(!Array.isArray(options)||options.length>200)fail('INVALID_CONFIG','Catalog options must be a bounded array')
+      for(const option of options){
+        if(!object(option)||typeof option.id!=='string'||!option.id||seen.has(option.id)||typeof option.label!=='string'||Object.keys(option).some(k=>!['id','label','description','adapterIds','modes','value'].includes(k)))fail('INVALID_CONFIG','Named catalog options require unique id, label and value')
+        seen.add(option.id)
+        if(option.adapterIds&&(!Array.isArray(option.adapterIds)||option.adapterIds.some(v=>typeof v!=='string')))fail('INVALID_CONFIG','Invalid catalog adapterIds')
+        if(option.modes&&(!Array.isArray(option.modes)||option.modes.some(v=>!['store','retrieve'].includes(v))))fail('INVALID_CONFIG','Invalid catalog modes')
+        if(option.value===undefined)fail('INVALID_CONFIG','Catalog value is required')
+        validateFields({retrieve:{[field]:option.value}})
+      }
+    }
+  }
   const ids=new Set()
   for (const e of doc.entries) {
     validateFields(e)
     if (typeof e.id!=='string'||!e.id||typeof e.adapterId!=='string'||!e.adapterId||ids.has(e.id)) fail('INVALID_CONFIG','Entry requires unique id and adapterId')
     ids.add(e.id)
-    if (e.preset != null && (typeof e.preset!=='string'||!Object.hasOwn(doc.presets,e.preset))) fail('INVALID_CONFIG',`Missing preset: ${e.preset}`)
+    if (e.preset != null && (typeof e.preset!=='string'||!Object.hasOwn(presetDefinitions(doc),e.preset))) fail('INVALID_CONFIG',`Missing preset: ${e.preset}`)
     effective(doc,e.id)
   }
   return clone(doc)
@@ -64,7 +79,7 @@ export function effective(doc,id) {
   const config={whitelist:[],blacklist:[],preset:null,...clone(local)},origins={whitelist:'default',blacklist:'default',preset:'default'}
   for (const k of Object.keys(local)) origins[k]='local'
   for (const mode of ['store','retrieve'])for(const key of Object.keys(local[mode]??{}))origins[`${mode}.${key}`]='local'
-  const preset=local.preset==null?null:doc.presets[local.preset]
+  const preset=local.preset==null?null:presetDefinitions(doc)[local.preset]
   for (const [k,v] of Object.entries(preset??{})) {
     if (['store','retrieve'].includes(k)) { config[k]={...config[k],...clone(v)}; for(const child of Object.keys(v)) origins[`${k}.${child}`]=`preset:${local.preset}` }
     else {config[k]=clone(v);origins[k]=`preset:${local.preset}`}
