@@ -1,0 +1,31 @@
+import {test} from 'node:test'
+import assert from 'node:assert/strict'
+import {dshScopes} from '../src/adapters/dsh-scopes.js'
+const wait=ms=>new Promise(r=>setTimeout(r,ms))
+function fixture(n=54){
+ const headers=Array.from({length:n},(_,i)=>({id:'cold:'+i,cwd:'/self-authored',createdAt:i,version:5,isSeeded:false})),titles=new Map(headers.slice(0,-1).map((h,i)=>[h.id,i<2?'Duplicate':'Find '+i])),listeners=new Map();let calls=0
+ const ctx={sessions:{list:()=>[],get:()=>undefined},workspaceRegistry:{list:()=>[{id:'w:1',title:'Own workspace',sessionIds:headers.map(h=>h.id)}]},sessionQuery:{listSessions:async()=>{calls++;return headers.map(header=>({header,live:false,persisted:true}))}},sessionProjectionCache:{cachedSnapshot:h=>({values:{title:titles.get(h.id)??null}})},sessionPersistence:{stat:async id=>{const header=headers.find(h=>h.id===id);return header?{header,revision:'metadata-only'}:undefined}},on:(id,fn)=>{listeners.set(id,fn);return()=>listeners.delete(id)}}
+ return {ctx,headers,titles,listeners,calls:()=>calls}
+}
+test('cold metadata snapshot retains all existing IDs and workspace, cached/unnamed titles, and never re-enumerates on keystrokes',async t=>{
+ const f=fixture(),p=dshScopes(f.ctx);t.after(()=>p.dispose());const first=await p.search({kind:'sessionId',query:'',limit:30,workspaceId:'w:1'}),second=await p.search({kind:'sessionId',query:'',limit:30,workspaceId:'w:1',cursor:first.nextCursor});assert.equal(first.items.length,30);assert.equal(second.items.length,24);assert.equal(new Set([...first.items,...second.items].map(r=>r.id)).size,54);assert.equal(second.items.at(-1).labelState,'unnamed');assert.equal(first.items[0].labelState,'cached');assert.equal(first.items[0].label,first.items[1].label);assert.notEqual(first.items[0].id,first.items[1].id)
+ for(const query of ['F','Fi','Find'])await p.search({kind:'sessionId',query,limit:30});assert.equal(f.calls(),1);await assert.rejects(p.search({kind:'sessionId',query:'changed',limit:30,cursor:first.nextCursor}),{code:'DIRECTORY_CHANGED'});await assert.rejects(p.search({kind:'sessionId',query:'',workspaceId:'other',limit:30,cursor:first.nextCursor}),{code:'DIRECTORY_CHANGED'});assert.equal((await p.search({kind:'sessionId',query:'',workspaceId:'other',limit:30})).items.length,0)
+})
+test('record/byte limits report bounded partial range, not a complete catalog',async t=>{
+ const f=fixture(10000),p=dshScopes(f.ctx,{maxRecords:50,maxBytes:1_000_000});t.after(()=>p.dispose());const result=await p.search({kind:'sessionId',limit:50});assert.equal(result.items.length,50);assert.equal(result.range.retained,50);assert.equal(result.range.limited,true);assert(result.range.message.includes('不是全部会话'))
+ const tiny=dshScopes(f.ctx,{maxRecords:50,maxBytes:10});t.after(()=>tiny.dispose());const small=await tiny.search({kind:'sessionId'});assert.equal(small.items.length,0);assert.equal(small.range.limited,true);assert(small.range.bytes<=10)
+})
+test('TTL, rename/create/delete, workspace and source epoch revoke cursor snapshots',async t=>{
+ const f=fixture(3),p=dshScopes(f.ctx,{ttlMs:20});t.after(()=>p.dispose());const request={kind:'sessionId',query:'',limit:1};let first=await p.search(request);f.titles.set('cold:0','Renamed');f.listeners.get('session/appended')({}, {type:'session/title'});await assert.rejects(p.search({...request,cursor:first.nextCursor}),{code:'DIRECTORY_CHANGED'});first=await p.search(request);assert.equal(first.items[0].label,'Renamed');f.headers.splice(1,1);await assert.rejects(p.search({...request,cursor:first.nextCursor}),{code:'DIRECTORY_CHANGED'});first=await p.search(request);await wait(25);await assert.rejects(p.search({...request,cursor:first.nextCursor}),{code:'DIRECTORY_CHANGED'});first=await p.search(request);f.ctx.sessionQuery={listSessions:async()=>[]};await assert.rejects(p.search({...request,cursor:first.nextCursor}),{code:'DIRECTORY_CHANGED'});assert.equal((await p.search(request)).items.length,0)
+})
+test('one cancelled caller does not abort another; all cancellations and unload abort shared work',async t=>{
+ const f=fixture(2);let complete,sourceSignal;f.ctx.sessionQuery.listSessions=signal=>{sourceSignal=signal;return new Promise(r=>complete=r)};const p=dshScopes(f.ctx);t.after(()=>p.dispose());const c=new AbortController(),one=p.search({kind:'sessionId',signal:c.signal}),two=p.search({kind:'sessionId'});c.abort();await assert.rejects(one,{name:'AbortError'});assert.equal(sourceSignal.aborted,false);complete(f.headers.map(header=>({header,persisted:true})));assert.equal((await two).items.length,2)
+ p.invalidate();const c2=new AbortController(),cancelled=p.search({kind:'sessionId',signal:c2.signal});c2.abort();await assert.rejects(cancelled,{name:'AbortError'});assert.equal(sourceSignal.aborted,true);const unloaded=p.search({kind:'sessionId'});p.dispose();await assert.rejects(unloaded,{code:'DIRECTORY_CHANGED'})
+})
+test('source acquisition and per-page stat waits are timed out even if a provider ignores abort',async t=>{
+ const keeper=setTimeout(()=>{},100);t.after(()=>clearTimeout(keeper));const f=fixture(1);f.ctx.sessionQuery.listSessions=()=>new Promise(()=>{});const p=dshScopes(f.ctx,{timeoutMs:20});t.after(()=>p.dispose());await assert.rejects(p.search({kind:'sessionId'}),e=>['TimeoutError','Error'].includes(e.name));const g=fixture(1);g.ctx.sessionPersistence.stat=()=>new Promise(()=>{});const stat=dshScopes(g.ctx,{timeoutMs:20});t.after(()=>stat.dispose());await assert.rejects(stat.search({kind:'sessionId'}),{name:'TimeoutError'})
+})
+
+test('workspace picker does not enumerate cold sessions and workspace cursor follows visible registry generation',async t=>{
+ const f=fixture(),workspaces=Array.from({length:3},(_,i)=>({id:'w:'+i,title:'Workspace '+i,sessionIds:[]}));f.ctx.workspaceRegistry.list=()=>workspaces;const p=dshScopes(f.ctx);t.after(()=>p.dispose());const first=await p.search({kind:'workspaceId',limit:1});assert.equal(first.items[0].id,'w:0');assert.equal(f.calls(),0);assert.equal((await p.search({kind:'workspaceId',limit:1,cursor:first.nextCursor})).items[0].id,'w:1');workspaces[1].title='Renamed';await assert.rejects(p.search({kind:'workspaceId',limit:1,cursor:first.nextCursor}),{code:'DIRECTORY_CHANGED'});assert.equal(f.calls(),0)
+})

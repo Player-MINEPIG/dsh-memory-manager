@@ -77,7 +77,9 @@ Local declarative named combinations reference these registered capabilities; lo
 
 ## Scope
 
-白名单与黑名单用来源实体目录选择稳定 ID，不要求填写 ID。会话按标题与 Workspace 查找；Workspace 按注册名称选择。DSH adapter 使用公开 SessionStore 的已加载会话与已缓存的 title projection 和 WorkspaceRegistry 的内存注册投影，绝不读取事件日志或调用全量持久会话搜索。尚未加载的会话不会冒充可见；需要来源提供分页元数据接口后才能纳入。
+白名单与黑名单用来源实体目录选择稳定 ID，不要求填写 ID。会话按标题与 Workspace 查找；Workspace 按注册名称选择。DSH adapter 使用公开 `sessionQuery.listSessions(signal)` 的来源可见 header 快照纳入未加载冷会话；标题只来自零 I/O 缓存投影，标明“缓存标题”，可能陈旧，缺缓存显示“未命名会话”。它不读取正文、不调用内容搜索或激活会话。Workspace 选择只查公开 WorkspaceRegistry，不枚举会话。缺公开冷目录服务时明确回到已加载会话范围。
+
+manager 一次保留 header 快照，默认最多 2000 条、1 MB，获取与每页 metadata stat 等待最多 3 秒，TTL 为 15 秒；可在 Host 配置 `scopeDirectoryLimits` 调整，每项必须为正整数且不超过默认值的 10 倍。超限会明确提示“不是全部会话”，只搜索保留范围，可刷新；输入变化不会逐次全量枚举。游标签名并绑定来源快照、查询和 Workspace；TTL、来源卸载、目录/Workspace 变化、标题事件、每页 metadata stat 发现删除或身份变化后拒绝旧游标。DSH 上游公开 header list 本身未分页，manager 的保留与时间界限不能限制来源内部枚举或分配，不能声称是来源分页。
 
 可选 `tavernScopeCatalog` Host 服务 v1 提供分页 `searchScopes({field,query,cursor,limit})`，field 为 characterId / presetId / userId，仅返回 `{items:[{id,name}],nextCursor}`。角色卡对应来源 selection.characterCardId；presetId 是 Tavern/ST prompt preset；userId 是 RP Persona，不是 DSH 登录账号。缺服务的版本显示安装说明，绝不回退到会读取全部正文的旧列表 API。
 

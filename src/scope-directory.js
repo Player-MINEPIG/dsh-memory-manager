@@ -9,16 +9,16 @@ export class ScopeDirectory {
  }
  catalog(){return [...this.providers.values()].map(p=>({id:p.id,label:p.label??p.id,kinds:p.kinds,enabled:!this.disabled.has(p.id),description:p.description??''}))}
  setEnabled(id,enabled){if(!this.providers.has(id))fail('DIRECTORY_UNAVAILABLE','目录 adapter 已卸载。');if(typeof enabled!=='boolean')fail('INVALID_REQUEST','enabled 必须为布尔值。');enabled?this.disabled.delete(id):this.disabled.add(id);this.generation++;return this.catalog()}
- async search({providerId,kind,query='',cursor,limit=30,workspaceId,signal}){
+ async search({providerId,kind,query='',cursor,limit=30,workspaceId,signal,refresh=false}){
   const provider=this.providers.get(providerId),generation=this.generation
   if(!provider||this.disabled.has(providerId))fail('DIRECTORY_UNAVAILABLE','目录 adapter 不可用或已停用。')
   if(!provider.kinds.includes(kind)||typeof query!=='string'||query.length>200||!Number.isInteger(limit)||limit<1||limit>50||cursor!==undefined&&(typeof cursor!=='string'||cursor.length>500))fail('INVALID_DIRECTORY_QUERY','目录查询参数无效。')
   signal?.throwIfAborted()
-  const result=await provider.search({kind,query,cursor,limit,workspaceId,signal})
+  const result=await provider.search({kind,query,cursor,limit,workspaceId,signal,refresh})
   if(this.generation!==generation||this.providers.get(providerId)!==provider)fail('DIRECTORY_CHANGED','目录 adapter 已变化，请重试。')
   signal?.throwIfAborted();safe(result)
   if(!Array.isArray(result.items)||result.items.length>limit||result.items.some(r=>typeof r.id!=='string'||!r.id||typeof r.label!=='string')||result.nextCursor!==undefined&&typeof result.nextCursor!=='string')fail('INVALID_DIRECTORY_RESULT','来源没有返回有界实体目录。')
-  return {items:result.items.map(r=>({id:r.id,label:r.label,...(typeof r.workspaceId==='string'?{workspaceId:r.workspaceId}:{}),...(typeof r.workspaceLabel==='string'?{workspaceLabel:r.workspaceLabel}:{})})),...(result.nextCursor?{nextCursor:result.nextCursor}:{}),description:provider.description??''}
+  return {items:result.items.map(r=>({id:r.id,label:r.label,...(typeof r.workspaceId==='string'?{workspaceId:r.workspaceId}:{}),...(typeof r.workspaceLabel==='string'?{workspaceLabel:r.workspaceLabel}:{}),...(['cached','live','unnamed'].includes(r.labelState)?{labelState:r.labelState}:{})})),...(result.nextCursor?{nextCursor:result.nextCursor}:{}),description:provider.description??'',...(result.range?{range:Object.fromEntries(Object.entries(result.range).filter(([k])=>['limited','retained','bytes','maxRecords','maxBytes','expiresAt','source','message'].includes(k)))}:{})}
  }
  async context(scope,{trustedSource=false}={}){
   const result={...scope},checks=[],generation=this.generation

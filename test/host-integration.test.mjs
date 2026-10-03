@@ -19,7 +19,7 @@ test('actual DSH request contains managed resource and version evidence; unload 
   for(const name of ['session','agent','session-projection','llm','tools','agent-loop'])await ctx.plugin((await load('@deepseek-ai/dsh-'+name)).default,name==='agent-loop'?{agents:[]}:{} )
   assert.equal(ctx.agentLoop.requestAssemblyVersion,1)
   ctx.on('agent/error',e=>errors.push(e.error))
-  class Provider extends llm.LlmAdapter{async *stream(request){requests.push(structuredClone(request.messages));yield{type:'block-start',index:0,blockType:'text'};yield{type:'text-delta',index:0,text:'ANSWER'};yield{type:'block-end',index:0,block:{type:'text',text:'ANSWER'}};yield{type:'finish',reason:{kind:'stop'}}}}
+  class Provider extends llm.LlmAdapter{async resolveModel(provider,id){return {provider,id,name:id,systemPromptUpdate:'in-history'}}async *stream(request){requests.push(structuredClone(request.messages));yield{type:'block-start',index:0,blockType:'text'};yield{type:'text-delta',index:0,text:'ANSWER'};yield{type:'block-end',index:0,block:{type:'text',text:'ANSWER'}};yield{type:'finish',reason:{kind:'stop'}}}}
   ctx.llm.registerAdapter(['test'],new Provider())
   let store
   await ctx.plugin({name:tavern.name,inject:tavern.inject,apply(c){store=tavern.apply(c,{storageDir:join(dir,'tavern')})}})
@@ -28,7 +28,8 @@ test('actual DSH request contains managed resource and version evidence; unload 
   const plugin=ctx.plugin(managerPlugin,{storageDir:dir,configPath});await plugin
   ctx.dshMemoryManager.registerAdapter({id:'acceptance',authority:'acceptance',list:async()=>[{id:'acceptance:1',type:'text',revision:4}],read:async()=>({id:'acceptance:1',type:'text',content:'MANAGED_RESOURCE_BODY',revision:4})})
   const handle=await ctx.agents.create({sessionId:'memory-real-host',agentOptions:{provider:'test',model:'test'}}),agent=handle.agent
-  const preset=store.assemblyPresets.get('builtin-cache');preset.id='memory-acceptance';preset.name='Memory acceptance';preset.rules.push({id:'memory',kind:'memory-manager.resources',enabled:true,role:'system',lifetime:'request',depth:null,text:'',name:'Managed resources'})
+  const preset=store.assemblyPresets.get('builtin-cache');preset.id='memory-acceptance';preset.name='Memory acceptance';// Keep the synthetic contribution isolated under complete system snapshot projection.
+  preset.rules=preset.rules.map(r=>r.kind==='native-system'?{...r,enabled:false}:r);preset.rules.push({id:'memory',kind:'memory-manager.resources',enabled:true,role:'system',lifetime:'request',depth:null,text:'',name:'Managed resources'})
   const saved=store.assemblyPresets.save(preset);store.assemblyPresets.apply(agent.id,saved.id)
   const turn=async text=>{agent.followup(llm.createUserMessage({content:[{type:'text',text}],source:{kind:'user'}}));await agent.whenIdle();assert.deepEqual(errors,[])}
   await turn('ONE')

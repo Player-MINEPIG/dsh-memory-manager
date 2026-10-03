@@ -22,7 +22,7 @@ export function handler(manager,connection){return async(req,res)=>{
     if(req.method==='GET'&&path==='query')result=await manager.query({scope,...(q.filters?{filters:JSON.parse(q.filters)}:{}),...Object.fromEntries(['turn','turnKind','status','adapterId'].map(key=>[key,url.searchParams.getAll(key).filter(Boolean)]))})
     else if(req.method==='GET'&&path==='options')result=manager.optionCatalog({id:q.id,adapterId:q.adapterId,sessionId:q.sessionId})
     else if(req.method==='GET'&&path==='adapters')result=manager.adapterCatalog()
-    else if(req.method==='GET'&&path==='scope-directory')result=await manager.scopeDirectory.search({...q,limit:q.limit===undefined?30:Number(q.limit)})
+    else if(req.method==='GET'&&path==='scope-directory')result=await manager.scopeDirectory.search({...q,refresh:q.refresh==='1',limit:q.limit===undefined?30:Number(q.limit)})
     else if(req.method==='GET'&&path==='configuration')result=manager.configurationSnapshot({id:q.id,adapterId:q.adapterId})
     else if(req.method==='GET'&&path==='read')result=await manager.read({adapterId:q.adapterId,id:q.id,scope})
     else if(req.method==='POST'){
