@@ -36,3 +36,11 @@ test('normal action restores after resize; placement is geometric in RTL and rep
  assert.deepEqual(entryPlacement(rect(10,12,43,25),rect(0,0,50,40),[rect(0,0,50,40)],390),{mode:'unavailable'})
  assert.deepEqual(entryPlacement(rect(400,12,43,25),rect(380,0,110,76),[],390),{mode:'unavailable'})
 })
+
+
+test('initial-session top fallback clears a foreign settings surface or reports no room',()=>{
+ const anchor=rect(1610,12,46,30),band=rect(0,0,1728,50),settings=rect(1288,0,440,907)
+ const placement=entryPlacement(anchor,band,[settings],1728)
+ assert.equal(placement.mode,'compact');assert(placement.left+28<settings.left)
+ assert.deepEqual(entryPlacement(rect(272,12,46,30),rect(0,0,390,50),[rect(0,0,56,50),rect(56,0,334,844)],390),{mode:'unavailable'})
+})
