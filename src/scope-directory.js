@@ -21,10 +21,24 @@ export class ScopeDirectory {
   return {items:result.items.map(r=>({id:r.id,label:r.label,...(typeof r.workspaceId==='string'?{workspaceId:r.workspaceId}:{}),...(typeof r.workspaceLabel==='string'?{workspaceLabel:r.workspaceLabel}:{}),...(['cached','live','unnamed'].includes(r.labelState)?{labelState:r.labelState}:{})})),...(result.nextCursor?{nextCursor:result.nextCursor}:{}),description:provider.description??'',...(result.range?{range:Object.fromEntries(Object.entries(result.range).filter(([k])=>['limited','retained','bytes','maxRecords','maxBytes','expiresAt','source','message'].includes(k)))}:{})}
  }
  async context(scope,{trustedSource=false}={}){
-  const result={...scope},checks=[],generation=this.generation
+  const result={...scope},checks=[],generation=this.generation,sessionId=scope?.sessionId,resolved=new Map()
   if(!trustedSource)for(const k of ['workspaceId','characterId','presetId','userId'])delete result[k]
+  for(const k of ['workspaceId','characterId','presetId','userId'])if(Object.hasOwn(result,k)){const value=result[k]==null?undefined:result[k];resolved.set(k,value);if(value===undefined)delete result[k]}
   // Facts come only from trusted Host services, never selector labels or caller claims.
-  for(const p of this.providers.values())if(!this.disabled.has(p.id)&&p.context){const lease=await p.context(clone(scope));safe(lease.scope);if(typeof lease.checkCurrent!=='function')fail('INVALID_SCOPE_CONTEXT','来源必须提供作用域 lease。');checks.push(lease.checkCurrent);for(const k of p.kinds){delete result[k];if(typeof lease.scope[k]==='string')result[k]=lease.scope[k]}}
-  return {scope:result,checkCurrent:()=>this.generation===generation&&checks.every(check=>check())}
+  for(const p of this.providers.values())if(!this.disabled.has(p.id)&&p.context){
+   const lease=await p.context(clone(result));safe(lease.scope)
+   if(!lease.scope||typeof lease.scope!=='object'||Array.isArray(lease.scope)||typeof lease.checkCurrent!=='function')fail('INVALID_SCOPE_CONTEXT','来源必须提供作用域对象及 lease。')
+   // sessionId is the bound lookup anchor, not an optional enrichment field.
+   if(Object.hasOwn(lease.scope,'sessionId')&&lease.scope.sessionId!==sessionId)fail('SCOPE_CONTEXT_CONFLICT','目录返回的会话与当前绑定不一致。')
+   checks.push(lease.checkCurrent)
+   for(const k of p.kinds){
+    if(k==='sessionId')continue
+    const value=lease.scope[k]==null?undefined:lease.scope[k]
+    if(value!==undefined&&(typeof value!=='string'||!value))fail('INVALID_SCOPE_CONTEXT','目录作用域事实必须为稳定 ID。')
+    if(resolved.has(k)&&resolved.get(k)!==value)fail('SCOPE_CONTEXT_CONFLICT','可信来源的作用域事实冲突：'+k)
+    resolved.set(k,value);delete result[k];if(value!==undefined)result[k]=value
+   }
+  }
+  return {scope:result,checkCurrent:()=>this.generation===generation&&checks.every(check=>check()===true)}
  }
 }
