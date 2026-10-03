@@ -59,3 +59,9 @@ HTTP 地址只接受明确配置的 loopback origin。管理路由使用 DSH `co
 ## English
 
 A resource manager and usage protocol for DSH. Providers remain authoritative for content, revision, permissions and atomic writes. Two native panels expose configuration provenance and actual usage evidence. JSON policies use explicit timing, composable rules, trusted operation chains and continuously overriding presets. Optional adapters live in this repository; source systems do not depend on the manager. No vector engine, summarizer, task ledger copy or autonomous scheduler is included. This is an unpublished local development build; browser acceptance and cross-plugin integration must be reported separately from unit tests.
+
+### 筛选与配置重读
+
+全局面板只筛选资源提供方；轮次、轮次来源、触发状态属于会话面板。筛选均可多选，同一项内满足任一选择，不同项同时满足，清空选择即不限；切换会话或重新打开面板时重置。资源提供方按 `adapterId` 路由到来源，属于管理接入信息，不是用户内容字段，也不是 `preset`。`preset` 持续覆盖其明确提供的配置字段。
+
+「重新读取管理配置」读取服务端已保存的规则与预设。未改动显示“已是最新”；改动必须带更高配置版本，通过校验后才生效。失败保留原有效配置，不自动改版本。查询范围及提供方返回数量可帮助区分没有资源、筛选无匹配和来源读取失败。全局技能注册表不会自动汇总会话目录，安装提供方也不代表此范围已有技能。

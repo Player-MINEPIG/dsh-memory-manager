@@ -61,21 +61,26 @@ export class MemoryManager {
     }
   }
   async query({scope={},turn,turnKind,status,adapterId,signal}={}) {
-    const records=[],diagnostics=[...this.diagnostics]
+    const selected=value=>(Array.isArray(value)?value:[value]).filter(v=>v!==undefined&&v!==null&&v!=='').map(String)
+    const matches=(values,value)=>!values.length||values.includes(String(value))
+    const turns=selected(turn),kinds=selected(turnKind),states=selected(status),sources=selected(adapterId)
+    const records=[],diagnostics=[...this.diagnostics],catalogs=[]
     for(const a of this.adapters.values()) {
-      if(adapterId&&a.id!==adapterId) continue
-      try {for(const r of await this.invoke(a,'list',{scope,signal})) {this.claim(a,r);diagnostics.push(...(r.diagnostics??[]).map(d=>({...d,adapterId:a.id})));records.push({...clone(r),adapterId:a.id,authority:r.authority??a.authority,capabilities:{edit:!!a.update,copy:!!a.copy,management:!!a.setManagementMode,...r.capabilities}})}}
-      catch(e) {diagnostics.push({adapterId:a.id,code:e.code??'SOURCE_ERROR',message:e.message})}
+      if(!matches(sources,a.id)) continue
+      try {const listed=await this.invoke(a,'list',{scope,signal});for(const r of listed) {this.claim(a,r);diagnostics.push(...(r.diagnostics??[]).map(d=>({...d,adapterId:a.id})));records.push({...clone(r),adapterId:a.id,authority:r.authority??a.authority,capabilities:{edit:!!a.update,copy:!!a.copy,management:!!a.setManagementMode,...r.capabilities}})}catalogs.push({adapterId:a.id,count:listed.length,scope:scope.sessionId?'session':'global',description:a.describeScope?.(scope)})}
+      catch(e) {catalogs.push({adapterId:a.id,count:null,scope:scope.sessionId?'session':'global'});diagnostics.push({adapterId:a.id,code:e.code??'SOURCE_ERROR',message:e.message})}
     }
-    for(const entry of this.configuration.document.entries) if((!adapterId||entry.adapterId===adapterId)&&!records.some(r=>r.id===entry.id)) records.push({id:entry.id,type:entry.type,adapterId:entry.adapterId,missing:true,capabilities:{edit:false,copy:false}})
-    const filter=t=>(!scope.sessionId||t.sessionId===scope.sessionId)&&(turn===undefined||String(t.turn)===String(turn))&&(!turnKind||t.turnKind===turnKind)
-    for(const fact of this.traces.filter(filter))if((!adapterId||fact.adapterId===adapterId)&&!records.some(r=>r.id===fact.id))records.push({id:fact.id,type:'unknown',adapterId:fact.adapterId,missing:true,capabilities:{edit:false,copy:false}})
+    for(const entry of this.configuration.document.entries) if(matches(sources,entry.adapterId)&&!records.some(r=>r.id===entry.id)) records.push({id:entry.id,type:entry.type,adapterId:entry.adapterId,missing:true,capabilities:{edit:false,copy:false}})
+    const inScope=t=>!scope.sessionId||t.sessionId===scope.sessionId
+    const facets={turns:[...new Set([...this.traces,...records.flatMap(r=>r.facts??[])].filter(inScope).filter(t=>t.turn!=null).map(t=>String(t.turn)))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}))}
+    const filter=t=>inScope(t)&&matches(turns,t.turn)&&matches(kinds,t.turnKind)
+    for(const fact of this.traces.filter(filter))if(matches(sources,fact.adapterId)&&!records.some(r=>r.id===fact.id))records.push({id:fact.id,type:'unknown',adapterId:fact.adapterId,missing:true,capabilities:{edit:false,copy:false}})
     const rows=records.map(r=>{
       const policy=this.getConfig(r.id),facts=[...this.traces,...(r.facts??[])].filter(t=>t.id===r.id&&t.adapterId===r.adapterId&&filter(t)),running=[...this.active.values()].some(t=>t.id===r.id&&filter(t))
       const state=running?'running':facts.some(t=>['triggered','applied','started'].includes(t.phase))?'past':'never'
       return {...r,config:policy.config,origins:policy.origins,configRevision:policy.revision,managed:r.managementMode==='managed',applicable:applies(policy.config,scope),status:state,facts,interrupted:facts.some(t=>t.interrupted),applied:facts.some(t=>t.phase==='applied')}
-    }).filter(r=>!status||r.status===status)
-    return {protocolVersion:1,revision:this.configuration.document.revision,configError:this.configuration.error,rows,diagnostics,adapters:[...this.adapters.values()].map(a=>({id:a.id,name:a.name,authority:a.authority}))}
+    }).filter(r=>matches(states,r.status))
+    return {protocolVersion:1,revision:this.configuration.document.revision,configError:this.configuration.error,rows,diagnostics,catalogs,facets,scope:scope.sessionId?{sessionId:scope.sessionId}:{global:true},adapters:[...this.adapters.values()].map(a=>({id:a.id,name:a.name,authority:a.authority}))}
   }
   async read({adapterId,id,scope={},signal}) {const a=this.adapters.get(adapterId);if(!a)fail('SOURCE_UNAVAILABLE','Source is unavailable');const result=await this.invoke(a,'read',{id,scope,signal});if(result)this.claim(a,result,id);else {const reservation=this.reservations.get(id);if(reservation?.adapter===a&&!reservation.tokens.size)this.reservations.delete(id)}return clone(result)}
   async update({adapterId,id,scope={},content,expectedRevision,operationId,signal}) {

@@ -4,6 +4,7 @@ export function installMvu(manager,service,usage){
   if(service.protocolVersion!==1)throw new Error('Unsupported tavernMvu protocol')
   const bind=args=>({...args,scope:Object.keys(args.scope??{}).length?args.scope:{authority:'local'}})
   const adapter={id:'tavern.mvu',name:'Tavern MVU',authority:'local'}
+  adapter.describeScope=scope=>scope.sessionId?'当前会话可见的 MVU 资源。':'本地权限范围内的 MVU 资源。'
   for(const method of ['list','read','update','copy','observe','validateConfig','setManagementMode'])if(service[method])adapter[method]=service[method].bind(service)
   if(service.setManagementMode)adapter.setManagementMode=async args=>{await service.setManagementMode(bind(args));return service.read(bind(args))}
   for(const method of ['list','read','update','copy'])if(service[method])adapter[method]=args=>service[method](bind(args))

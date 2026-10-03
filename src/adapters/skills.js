@@ -35,6 +35,7 @@ export function skillAdapter(ctx){
     return {registry,options,rows}
   }
   return {id:'dsh.skills',name:'DSH Skills',authority:'dsh.skill-registry',
+    describeScope:scope=>scope.sessionId?'当前会话 Agent 的技能目录；会话须已加载。':'全局技能注册表；不汇总各会话工作目录中的技能。安装技能提供方不代表此范围已有技能。',
     async list({scope,signal}){const {rows}=await catalog(scope,signal);return rows.map(({skill:s,id,stable})=>({id,name:s.name,type:'skill',revision:s.content===undefined?null:hash(s.content),summary:s.description??'',source:{provider:s.provider??'unknown'},nativeBehavior:true,capabilities:{bind:stable},...(!stable?{diagnostics:[{code:'SKILL_STABLE_ID_REQUIRED',message:`${s.name}: 来源未声明稳定身份；仅可查看，不能持久绑定管理配置。`}]}:{})}))},
     async read({id,scope,signal}){const {registry,options,rows}=await catalog(scope,signal),row=rows.find(s=>s.id===id);if(!row)return null;const full=await registry.get(row.skill.name,options);if(!full||identity(full,registry,scope).id!==id)fail('SOURCE_CHANGED','Skill source changed during read');return {id,name:row.skill.name,type:'skill',content:full.content,revision:hash(full.content??''),authority:'dsh.skill-registry',capabilities:{bind:row.stable}}},
     validateConfig(c){if(c.id.startsWith('skill-view:'))fail('SKILL_STABLE_ID_REQUIRED','View handles cannot be bound to persistent configuration; the source must declare dshResourceIdentity');if(c.type&&c.type!=='skill')fail('TYPE_MISMATCH','Skill source type is skill')},

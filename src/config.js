@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { isDeepStrictEqual } from 'node:util'
 export const clone = value => structuredClone(value)
 export function fail(code, message) { throw Object.assign(new Error(message), { code }) }
 const object = x => x && typeof x === 'object' && !Array.isArray(x)
@@ -82,10 +83,16 @@ export class Configuration {
   async load(validate) {
     try {
       const next=validateDocument(JSON.parse(await readFile(this.path,'utf8')))
-      if (this.loaded&&next.revision<=this.document.revision) fail('REVISION_CONFLICT','Increase configuration revision before reloading')
+      // Preserve the document identity on a no-op; reload() still advances pending
+      // so an earlier permission lease cannot become current again.
+      if (this.loaded&&isDeepStrictEqual(next,this.document)) {
+        this.error=null
+        return {revision:this.document.revision,unchanged:true}
+      }
+      if (this.loaded&&next.revision<=this.document.revision) fail('REVISION_CONFLICT',`文件版本 ${next.revision}，当前生效版本 ${this.document.revision}。配置内容或版本已变化，但版本未递增；请由配置维护者保存为高于 ${this.document.revision} 的版本后重读。当前有效配置保持不变。`)
       await validate(next)
       this.document=next;this.loaded=true;this.error=null
-      return {revision:next.revision}
+      return {revision:next.revision,unchanged:false}
     } catch(e) {this.error={code:e.code??'INVALID_CONFIG',message:e.message};throw e}
   }
   get(id) {return effective(this.document,id)}
