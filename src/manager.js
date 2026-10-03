@@ -92,9 +92,9 @@ export class MemoryManager {
     const filter=t=>inScope(t)&&matches(turns,t.turn)&&matches(kinds,t.turnKind)
     for(const fact of this.traces.filter(filter))if(matches(sources,fact.adapterId)&&!records.some(r=>r.id===fact.id))records.push({id:fact.id,adapterId:fact.adapterId,missing:true,capabilities:{edit:false,copy:false}})
     const rows=records.map(r=>{
-      const policy=this.getConfig(r.id),facts=[...this.traces,...(r.facts??[])].filter(t=>t.id===r.id&&t.adapterId===r.adapterId&&filter(t)),running=[...this.active.values()].some(t=>t.id===r.id&&filter(t))
+      const policy=this.getConfig(r.id),facts=[...this.traces,...(r.facts??[])].filter(t=>t.id===r.id&&t.adapterId===r.adapterId&&filter(t)),activeFacts=[...this.active.values()].filter(t=>t.id===r.id&&t.adapterId===r.adapterId&&filter(t)).map(clone),running=activeFacts.length>0
       const state=running?'running':facts.some(t=>['triggered','applied','started'].includes(t.phase))?'past':'never'
-      return {...r,config:policy.config,origins:policy.origins,configRevision:policy.revision,managed:r.managementMode==='managed',applicable:applies(policy.config,scope),status:state,facts,interrupted:facts.some(t=>t.interrupted),applied:facts.some(t=>t.phase==='applied')}
+      return {...r,config:policy.config,origins:policy.origins,configRevision:policy.revision,managed:r.managementMode==='managed',applicable:applies(policy.config,scope),status:state,facts,activeFacts,interrupted:facts.some(t=>t.interrupted),applied:facts.some(t=>t.phase==='applied')}
     })
     facets.fields=Object.fromEntries(configurationFilterFields.map(field=>[field,[...new Set(rows.flatMap(r=>filterValues(r,field)))].sort()]))
     const filteredRows=rows.filter(r=>matches(states,r.status)&&matchesConfigurationFilters(r,filters))

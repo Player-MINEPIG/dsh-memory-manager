@@ -1,0 +1,15 @@
+import {createElement as h,useEffect,useState} from 'react'
+import {sessionRounds,roundRows,roundKinds} from './session-rounds.js'
+
+export const roundCss=`.dmm .dmm-rounds{display:grid;gap:12px}.dmm .dmm-round{border:1px solid color-mix(in srgb,currentColor 15%,transparent);border-radius:8px;overflow:hidden}.dmm .dmm-round>summary{cursor:pointer;padding:12px 16px;display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-height:44px;box-sizing:border-box}.dmm .dmm-round-title{font-weight:600}.dmm .dmm-round-body{padding:0 16px 12px}.dmm .dmm-round-counts{margin-left:auto;display:flex;gap:12px;flex-wrap:wrap;font-size:12px}.dmm .dmm-resource-status{white-space:nowrap}.dmm .dmm-round-note{margin:0 0 12px}.dmm .dmm-round[open]>summary{border-bottom:1px solid color-mix(in srgb,currentColor 12%,transparent);margin-bottom:12px}@media(max-width:480px){.dmm .dmm-round>summary{padding:10px 12px}.dmm .dmm-round-body{padding:0 12px 10px}.dmm .dmm-round-counts{margin-left:0;flex-basis:100%;gap:10px}}`
+const labels={running:'正在触发',past:'曾触发',never:'未触发'}
+export function RoundTable({data,filters,Table,onDetail}){
+ const groups=sessionRounds(data,filters.turn),[open,setOpen]=useState(()=>new Set([groups[0]?.key])),[visible,setVisible]=useState(20)
+ const keys=groups.map(group=>group.key).join('\u0000')
+ useEffect(()=>{setOpen(previous=>groups.some(group=>previous.has(group.key))?previous:new Set([groups[0]?.key]))},[keys])
+ return h('div',{className:'dmm-rounds','aria-label':'按轮次分类的记忆资源'},h('p',{className:'dmm-muted dmm-round-note'},'按来源提供的轮次记录分类，显示当前资源与生效配置；不还原历史正文或配置。'),...groups.slice(0,visible).map(group=>{
+  const rows=roundRows(data,group.turn,filters.status),types=roundKinds(rows)
+  const counts=Object.fromEntries(Object.keys(labels).map(status=>[status,rows.filter(row=>row.status===status).length]))
+  return h('details',{key:group.key,className:'dmm-round',open:open.has(group.key),'data-round':group.turn??'unknown',onToggle:e=>{const next=e.currentTarget.open;setOpen(previous=>{if(previous.has(group.key)===next)return previous;const value=new Set(previous);if(next)value.add(group.key);else value.delete(group.key);return value})}},h('summary',null,h('span',{className:'dmm-round-title'},group.label),types&&h('span',{className:'dmm-muted'},types),h('span',{className:'dmm-round-counts'},...Object.entries(labels).map(([status,label])=>h('span',{key:status,'data-status':status},`${label} ${counts[status]}`)))),open.has(group.key)&&h('div',{className:'dmm-round-body'},rows.length?h(Table,{data:{...data,rows},showStatus:true,onDetail:row=>onDetail(row,group.turn,group.label)}):h('p',{className:'dmm-empty'},'本轮次和筛选条件下没有可见资源。')))
+ }),groups.length>visible&&h('button',{onClick:()=>setVisible(count=>count+20)},`显示更多轮次（剩余 ${groups.length-visible}）`))
+}
