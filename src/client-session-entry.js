@@ -17,14 +17,13 @@ function visibleControlRects(anchor,control,header){
 function useEntryLayout(element,button,fallback){
  const [layout,setLayout]=useState({mode:'normal'}),size=useRef(null)
  useLayoutEffect(()=>{
-  if(fallback)return
   const anchor=element.current,control=button.current,header=anchor?.closest('header')
-  if(!header)return
+  if(!anchor||!control||(!fallback&&!header))return
   size.current={width:parseFloat(getComputedStyle(anchor).width),height:parseFloat(getComputedStyle(anchor).height)}
   let frame=0,settlingUntil=0
   const update=()=>{
    frame=0
-   const headerRect=header.getBoundingClientRect(),anchorRect=anchor.getBoundingClientRect()
+   const headerRect=fallback?{left:0,right:document.documentElement.clientWidth,top:0,bottom:50}:header.getBoundingClientRect(),anchorRect=anchor.getBoundingClientRect()
    const controls=visibleControlRects(anchor,control,headerRect)
    let placement=entryPlacement(anchorRect,headerRect,controls,document.documentElement.clientWidth)
    // A popup's painted container may block a gap even when its buttons are
@@ -32,8 +31,16 @@ function useEntryLayout(element,button,fallback){
    // only background ancestors and our own nodes are safe to occupy.
    for(let attempt=0;attempt<6&&placement.mode!=='unavailable';attempt++){
     const r=placement.mode==='compact'?{left:placement.left,top:placement.top,width:placement.width,height:placement.height}:anchorRect
-    const hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)
-    if(!hit||anchor.contains(hit)||hit.contains(anchor)||hit.closest('.dmm-overlay,[role=tooltip]'))break
+    // Check the whole target, beneath our moving button/placeholder too. A
+    // clear center alone can still leave its edge over a foreign surface.
+    const points=[[r.left+r.width/2,r.top+r.height/2],[r.left+1,r.top+1],[r.left+r.width-1,r.top+1],[r.left+1,r.top+r.height-1],[r.left+r.width-1,r.top+r.height-1]]
+    const hit=points.map(([x,y])=>document.elementsFromPoint(x,y).find(node=>!anchor.contains(node))).find(node=>{
+     if(!node||node.contains(anchor)||node.closest('.dmm-overlay,[role=tooltip]'))return false
+     // The root fallback is outside the native header. Its empty public slot
+     // background is safe after controls were excluded geometrically.
+     return !(fallback&&node.closest('[data-slot="conversation.header"]')&&!node.closest('button,a,[role=button],input,select'))
+    })
+    if(!hit)break
     const obstacle=hit.getBoundingClientRect()
     if(!obstacle.width||!obstacle.height){placement={mode:'unavailable'};break}
     controls.push(obstacle);placement=entryPlacement(anchorRect,headerRect,controls,document.documentElement.clientWidth)
@@ -46,7 +53,7 @@ function useEntryLayout(element,button,fallback){
   }
   const schedule=()=>{if(!frame)frame=requestAnimationFrame(update)}
   const settling=()=>{settlingUntil=performance.now()+750;schedule()}
-  update();const resize=new ResizeObserver(schedule);resize.observe(header)
+  update();const resize=new ResizeObserver(schedule);resize.observe(header??document.documentElement)
   const observer=new MutationObserver(schedule);observer.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class','hidden','dir','data-open','data-state','aria-expanded','aria-hidden','open']})
   window.addEventListener('resize',schedule)
   const starts=['transitionrun','animationstart'],ends=['transitionend','transitioncancel','animationend','animationcancel']
@@ -66,7 +73,7 @@ export function createSessionEntries(Panel){
   const element=useRef(null),button=useRef(null),{layout,size}=useEntryLayout(element,button,fallback)
   const compact=layout.mode==='compact',label=layout.mode==='unavailable'?'记忆管理；顶栏空间不足或被覆盖，请关闭弹出菜单、收起侧栏或扩大窗口。':'记忆管理'
   const toggle=()=>{if(open)panel.close();else panel.open(sessionId,button.current)}
-  return h('div',{ref:element,className:fallback?'dmm-session-entry':'dmm-header-entry',style:compact?size:undefined},h(Tooltip,{label,side:'bottom',portal:true,maxWidth:260,disabled:open||layout.mode==='normal'},h('button',{ref:button,type:'button',className:compact?'dmm-entry-compact':undefined,style:compact?{position:'fixed',left:layout.left/layout.zoom,top:layout.top/layout.zoom,width:layout.width/layout.zoom,height:layout.height/layout.zoom}:undefined,'data-dmm-layout':layout.mode,'data-dmm-session-entry':sessionId,'data-dmm-native-entry':fallback?undefined:sessionId,onClick:toggle,'aria-label':'记忆管理','aria-expanded':open,'aria-haspopup':'dialog'},compact?memoryIcon():'记忆')))
+  return h('div',{ref:element,className:fallback?'dmm-session-entry':'dmm-header-entry',style:fallback&&layout.mode==='unavailable'?{visibility:'hidden'}:compact?size:undefined},h(Tooltip,{label,side:'bottom',portal:true,maxWidth:260,disabled:open||layout.mode==='normal'},h('button',{ref:button,type:'button',className:compact?'dmm-entry-compact':undefined,style:compact?{position:'fixed',left:layout.left/layout.zoom,top:layout.top/layout.zoom,width:layout.width/layout.zoom,height:layout.height/layout.zoom}:undefined,'data-dmm-layout':layout.mode,'data-dmm-session-entry':sessionId,'data-dmm-native-entry':fallback?undefined:sessionId,onClick:toggle,'aria-label':'记忆管理','aria-expanded':open,'aria-haspopup':'dialog'},compact?memoryIcon():'记忆')))
  }
  function SessionEntry({useSessions}){
   const sessionId=useSessions(currentSessionId),[visibility,setVisibility]=useState({native:true,conversation:false})
