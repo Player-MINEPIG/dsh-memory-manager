@@ -21,20 +21,38 @@ function useEntryLayout(element,button,fallback){
   const anchor=element.current,control=button.current,header=anchor?.closest('header')
   if(!header)return
   size.current={width:parseFloat(getComputedStyle(anchor).width),height:parseFloat(getComputedStyle(anchor).height)}
-  let frame=0
+  let frame=0,settlingUntil=0
   const update=()=>{
    frame=0
    const headerRect=header.getBoundingClientRect(),anchorRect=anchor.getBoundingClientRect()
-   const placement=entryPlacement(anchorRect,headerRect,visibleControlRects(anchor,control,headerRect),document.documentElement.clientWidth)
+   const controls=visibleControlRects(anchor,control,headerRect)
+   let placement=entryPlacement(anchorRect,headerRect,controls,document.documentElement.clientWidth)
+   // A popup's painted container may block a gap even when its buttons are
+   // below the top band. Inspect the actual target before moving our button;
+   // only background ancestors and our own nodes are safe to occupy.
+   for(let attempt=0;attempt<6&&placement.mode!=='unavailable';attempt++){
+    const r=placement.mode==='compact'?{left:placement.left,top:placement.top,width:placement.width,height:placement.height}:anchorRect
+    const hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)
+    if(!hit||anchor.contains(hit)||hit.contains(anchor)||hit.closest('.dmm-overlay,[role=tooltip]'))break
+    const obstacle=hit.getBoundingClientRect()
+    if(!obstacle.width||!obstacle.height){placement={mode:'unavailable'};break}
+    controls.push(obstacle);placement=entryPlacement(anchorRect,headerRect,controls,document.documentElement.clientWidth)
+    if(attempt===5)placement={mode:'unavailable'}
+   }
    const zoom=Math.round(anchorRect.width/parseFloat(getComputedStyle(anchor).width)*1e6)/1e6||1
    const next=placement.mode==='compact'?{...placement,zoom}:placement
    setLayout(previous=>JSON.stringify(previous)===JSON.stringify(next)?previous:next)
+   if(performance.now()<settlingUntil)schedule()
   }
   const schedule=()=>{if(!frame)frame=requestAnimationFrame(update)}
+  const settling=()=>{settlingUntil=performance.now()+750;schedule()}
   update();const resize=new ResizeObserver(schedule);resize.observe(header)
-  const observer=new MutationObserver(schedule);observer.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class','hidden','dir']})
+  const observer=new MutationObserver(schedule);observer.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class','hidden','dir','data-open','data-state','aria-expanded','aria-hidden','open']})
   window.addEventListener('resize',schedule)
-  return()=>{resize.disconnect();observer.disconnect();window.removeEventListener('resize',schedule);if(frame)cancelAnimationFrame(frame)}
+  const starts=['transitionrun','animationstart'],ends=['transitionend','transitioncancel','animationend','animationcancel']
+  for(const event of starts)document.addEventListener(event,settling,true)
+  for(const event of ends)document.addEventListener(event,schedule,true)
+  return()=>{resize.disconnect();observer.disconnect();window.removeEventListener('resize',schedule);for(const event of starts)document.removeEventListener(event,settling,true);for(const event of ends)document.removeEventListener(event,schedule,true);if(frame)cancelAnimationFrame(frame)}
  },[fallback])
  return {layout,size:size.current}
 }
@@ -46,7 +64,7 @@ export function createSessionEntries(Panel){
  function Header({sessionId,fallback=false}){
   const owner=useSyncExternalStore(panel.subscribe,panel.getSnapshot,panel.getSnapshot),open=owner?.sessionId===sessionId
   const element=useRef(null),button=useRef(null),{layout,size}=useEntryLayout(element,button,fallback)
-  const compact=layout.mode==='compact',label=layout.mode==='unavailable'?'记忆管理；顶栏空间不足，请收起侧栏或扩大窗口。':'记忆管理'
+  const compact=layout.mode==='compact',label=layout.mode==='unavailable'?'记忆管理；顶栏空间不足或被覆盖，请关闭弹出菜单、收起侧栏或扩大窗口。':'记忆管理'
   const toggle=()=>{if(open)panel.close();else panel.open(sessionId,button.current)}
   return h('div',{ref:element,className:fallback?'dmm-session-entry':'dmm-header-entry',style:compact?size:undefined},h(Tooltip,{label,side:'bottom',portal:true,maxWidth:260,disabled:open||layout.mode==='normal'},h('button',{ref:button,type:'button',className:compact?'dmm-entry-compact':undefined,style:compact?{position:'fixed',left:layout.left/layout.zoom,top:layout.top/layout.zoom,width:layout.width/layout.zoom,height:layout.height/layout.zoom}:undefined,'data-dmm-layout':layout.mode,'data-dmm-session-entry':sessionId,'data-dmm-native-entry':fallback?undefined:sessionId,onClick:toggle,'aria-label':'记忆管理','aria-expanded':open,'aria-haspopup':'dialog'},compact?memoryIcon():'记忆')))
  }
