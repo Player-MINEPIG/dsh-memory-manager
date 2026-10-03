@@ -1,5 +1,6 @@
 import {readFile} from 'node:fs/promises'
 import { fail } from './config.js'
+import {renderDocumentation} from './documentation.js'
 export function handler(manager,connection){return async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('Cache-Control','no-store')
   try{
@@ -10,14 +11,18 @@ export function handler(manager,connection){return async(req,res)=>{
     if(req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)fail('FORBIDDEN','Cross-origin access denied')
     if(req.headers['sec-fetch-site']==='cross-site')fail('FORBIDDEN','Cross-site access denied')
     const scope=q.sessionId?{sessionId:q.sessionId}:{}
-    if(req.method==='GET'&&path==='options-documentation'){
-      const text=await readFile(new URL('../docs/OPTIONS.md',import.meta.url),'utf8'),escaped=text.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
+    if(req.method==='GET'&&['options-documentation','documentation'].includes(path)){
+      const key=q.document??'OPTIONS',documents={OPTIONS:'../docs/OPTIONS.md',API:'../docs/API.md',VALIDATION:'../docs/VALIDATION.md',README:'../README.md'}
+      if(!Object.hasOwn(documents,key))fail('NOT_FOUND','Unknown documentation page')
+      const text=await readFile(new URL(documents[key],import.meta.url),'utf8')
       res.setHeader('Content-Type','text/html; charset=utf-8');res.setHeader('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'")
-      res.end('<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>记忆管理选项扩展文档</title><style>body{max-width:900px;margin:32px auto;padding:0 20px;font:15px/1.7 system-ui}pre{white-space:pre-wrap;overflow-wrap:anywhere}</style><pre>'+escaped+'</pre></html>');return
+      res.setHeader('X-Content-Type-Options','nosniff');res.end(renderDocumentation(text));return
     }
     let result
     if(req.method==='GET'&&path==='query')result=await manager.query({scope,...(q.filters?{filters:JSON.parse(q.filters)}:{}),...Object.fromEntries(['turn','turnKind','status','adapterId'].map(key=>[key,url.searchParams.getAll(key).filter(Boolean)]))})
     else if(req.method==='GET'&&path==='options')result=manager.optionCatalog({id:q.id,adapterId:q.adapterId,sessionId:q.sessionId})
+    else if(req.method==='GET'&&path==='adapters')result=manager.adapterCatalog()
+    else if(req.method==='GET'&&path==='scope-directory')result=await manager.scopeDirectory.search({...q,limit:q.limit===undefined?30:Number(q.limit)})
     else if(req.method==='GET'&&path==='configuration')result=manager.configurationSnapshot({id:q.id,adapterId:q.adapterId})
     else if(req.method==='GET'&&path==='read')result=await manager.read({adapterId:q.adapterId,id:q.id,scope})
     else if(req.method==='POST'){
@@ -25,6 +30,7 @@ export function handler(manager,connection){return async(req,res)=>{
       let body='';for await(const chunk of req){body+=chunk;if(body.length>2_000_000)fail('TOO_LARGE','Request exceeds 2 MB')}
       const data=JSON.parse(body||'{}')
       if(path==='reload')result=await manager.reload()
+      else if(path==='adapter-enabled')result=manager.setAdapterEnabled(data)
       else if(path==='validate-configuration')result=await manager.validateEntry(data)
       else if(path==='save-configuration')result=await manager.saveEntry(data)
       else if(path==='update')result=await manager.update({...data,scope:data.sessionId?{sessionId:data.sessionId}:{}})

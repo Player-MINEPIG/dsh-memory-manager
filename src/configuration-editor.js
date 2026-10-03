@@ -9,13 +9,13 @@ import {clone,effective,fail,validateDocument} from './config.js'
 
 function identity({id,adapterId,entry}){
  if(typeof id!=='string'||!id||typeof adapterId!=='string'||!adapterId)fail('INVALID_CONFIG','资源 ID 和提供方不能为空。')
- if(entry&&(entry.id!==id||entry.adapterId!==adapterId))fail('IDENTITY_CONFLICT','不能通过管理配置修改资源 ID 或提供方；独立内容请复制为新 ID。')
+ if(entry&&(entry.id!==id||(entry.sourceAdapterId??entry.adapterId)!==adapterId))fail('IDENTITY_CONFLICT','资源 ID 和权威来源必须保留；更换条目 adapter 只设置规则路由，不迁移正文。')
 }
 export function configurationSnapshot(manager,{id,adapterId}){
  identity({id,adapterId})
  const doc=manager.configuration.document,local=doc.entries.find(e=>e.id===id)??null
- if(local&&local.adapterId!==adapterId)fail('OWNERSHIP_CONFLICT','该资源已绑定其他提供方。')
- return {id,adapterId,revision:doc.revision,local:clone(local),...effective(doc,id),presets:clone(presetDefinitions(doc)),configError:manager.configuration.error,sourceAvailable:manager.adapters.has(adapterId)}
+ if(local&&(local.sourceAdapterId??local.adapterId)!==adapterId)fail('OWNERSHIP_CONFLICT','该资源已绑定其他提供方。')
+ return {id,adapterId,revision:doc.revision,local:clone(local),...effective(doc,id),presets:clone(presetDefinitions(doc)),configError:manager.configuration.error,sourceAvailable:manager.isAdapterEnabled(adapterId)}
 }
 function proposedDocument(manager,{id,adapterId,entry,expectedRevision}){
  identity({id,adapterId,entry})
@@ -24,7 +24,7 @@ function proposedDocument(manager,{id,adapterId,entry,expectedRevision}){
  if(!Number.isInteger(expectedRevision)||expectedRevision!==doc.revision)fail('REVISION_CONFLICT',`配置已变化：编辑版本 ${expectedRevision??'未提供'}，当前版本 ${doc.revision}。请重新载入后合并修改。`)
  if(!entry||typeof entry!=='object'||Array.isArray(entry))fail('INVALID_CONFIG','本地配置必须是 JSON 对象。')
  const existing=doc.entries.find(e=>e.id===id)
- if(existing&&existing.adapterId!==adapterId)fail('OWNERSHIP_CONFLICT','该资源已绑定其他提供方。')
+ if(existing&&(existing.sourceAdapterId??existing.adapterId)!==adapterId)fail('OWNERSHIP_CONFLICT','该资源已绑定其他提供方。')
  const entries=existing?doc.entries.map(e=>e.id===id?clone(entry):e):[...doc.entries,clone(entry)]
  return validateDocument({...clone(doc),entries})
 }
@@ -36,17 +36,22 @@ function conditionReferences(rule){
  return (rule.all??rule.any??rule.at_least?.conditions??[]).flatMap(conditionReferences)
 }
 async function inspect(manager,args,{duringSave=false}={}){
- const doc=manager.configuration.document,epoch=manager.configuration.pending,diagnostics=[],catalogRevision=manager.optionCatalog({id:args.id,adapterId:args.adapterId}).catalogRevision
+ const doc=manager.configuration.document,epoch=manager.configuration.pending,diagnostics=[],catalogRevision=manager.optionCatalog({id:args.id,adapterId:args.entry?.adapterId??args.adapterId}).catalogRevision
  const add=(level,code,field,message)=>diagnostics.push({level,code,field,message})
  let next
  try{if(args.expectedCatalogRevision&&args.expectedCatalogRevision!==catalogRevision)fail('CATALOG_CHANGED','选项能力已变化，请重新查看并校验草稿。');next=proposedDocument(manager,args)}catch(e){return {report:{valid:false,revision:doc.revision,diagnostics:[{level:'error',code:e.code??'INVALID_CONFIG',field:'configuration',message:e.message}]},checkCurrent:()=>false}}
- const composed=effective(next,args.id),adapter=manager.adapters.get(args.adapterId),lifetime=manager.lifetimes.get(adapter),usage=manager.usage
+ const composed=effective(next,args.id),adapter=manager.adapters.get(args.entry.adapterId),source=manager.adapters.get(args.adapterId),lifetime=manager.lifetimes.get(adapter),sourceLifetime=manager.lifetimes.get(source),usage=manager.usage
  const conditions=new Map(usage?.conditions??[]),operations=new Map(usage?.operations??[])
- const owns=()=>{try{manager.assertOwner(adapter,args.id);return true}catch{return false}}
- const checkCurrent=()=>manager.optionCatalog({id:args.id,adapterId:args.adapterId}).catalogRevision===catalogRevision&&owns()&&manager.configuration.document===doc&&(duringSave||manager.configuration.pending===epoch)&&manager.adapters.get(args.adapterId)===adapter&&manager.lifetimes.get(adapter)===lifetime&&!lifetime?.signal.aborted&&conditions.size===(usage?.conditions.size??0)&&[...conditions].every(([k,v])=>usage.conditions.get(k)===v)&&operations.size===(usage?.operations.size??0)&&[...operations].every(([k,v])=>usage.operations.get(k)===v)
- if(!adapter)add('error','SOURCE_UNAVAILABLE','adapterId','提供方当前未注册，无法判定组合是否受支持；配置未保存。')
+ const owns=()=>{try{manager.assertOwner(source,args.id);return true}catch{return false}}
+ const checkCurrent=()=>manager.optionCatalog({id:args.id,adapterId:args.entry?.adapterId??args.adapterId}).catalogRevision===catalogRevision&&owns()&&manager.configuration.document===doc&&(duringSave||manager.configuration.pending===epoch)&&manager.adapters.get(args.entry.adapterId)===adapter&&manager.isAdapterEnabled(adapter?.id)&&manager.lifetimes.get(adapter)===lifetime&&!lifetime?.signal.aborted&&manager.adapters.get(args.adapterId)===source&&manager.isAdapterEnabled(source?.id)&&manager.lifetimes.get(source)===sourceLifetime&&!sourceLifetime?.signal.aborted&&conditions.size===(usage?.conditions.size??0)&&[...conditions].every(([k,v])=>usage.conditions.get(k)===v)&&operations.size===(usage?.operations.size??0)&&[...operations].every(([k,v])=>usage.operations.get(k)===v)
+ if(!source||!manager.isAdapterEnabled(args.adapterId))add('error','SOURCE_UNAVAILABLE','resource','权威来源已卸载或停用；不迁移资源正文。')
+ if(adapter&&args.entry.adapterId!==args.adapterId){
+  if(adapter.strategyOwner==='source'||typeof adapter.validateResourceRoute!=='function')add('error','ROUTE_UNSUPPORTED','adapterId','所选 adapter 未提供跨源资源路由验证；草稿可保留，无法保存此组合。')
+  else try{const route=await manager.invoke(adapter,'validateResourceRoute',{id:args.id,sourceAdapterId:args.adapterId,scope:args.sessionId?{sessionId:args.sessionId}:{}});if(route?.supported!==true||route.id!==args.id||route.sourceAdapterId!==args.adapterId)throw Error('未确认真实资源 ID 与权威来源');add('info','RESOURCE_ROUTE_VALIDATED','adapterId','规则通过所选 adapter 执行；正文仍由原来源读取并校验权限。')}catch(e){add('error',e.code??'ROUTE_UNSUPPORTED','adapterId',e.message)}
+ }
+ if(!adapter||!manager.isAdapterEnabled(adapter.id))add('error','SOURCE_UNAVAILABLE','adapterId','提供方当前未注册，无法判定组合是否受支持；配置未保存。')
  else if(typeof adapter.validateConfig!=='function')add('error','VALIDATION_UNAVAILABLE','adapterId','提供方没有只读配置校验接口，可行性不可判定；配置未保存。')
- else try{manager.assertOwner(adapter,args.id);await adapter.validateConfig(clone(composed.config));add('info','SOURCE_VALIDATED','adapterId','提供方配置校验通过。')}catch(e){add('error',e.code??'SOURCE_VALIDATION_FAILED','configuration',`提供方拒绝此配置：${e.message}`)}
+ else try{manager.assertOwner(source,args.id);await adapter.validateConfig(clone(composed.config));add('info','SOURCE_VALIDATED','adapterId','提供方配置校验通过。')}catch(e){add('error',e.code??'SOURCE_VALIDATION_FAILED','configuration',`提供方拒绝此配置：${e.message}`)}
  if(adapter)for(const error of capabilityErrors(adapter,composed.config,conditions,operations))add('error','CAPABILITY_MISMATCH',error.field,error.message)
  for(const mode of ['store','retrieve']){
   const behavior=composed.config[mode]

@@ -26,7 +26,8 @@ test('controlled entry forms round-trip local-only config and reject lossy impor
  assert.deepEqual(entryFrom(formFrom(entry),row),entry)
  assert.deepEqual(entryFrom(importEntry(JSON.stringify(entry),row),row),entry)
  assert.deepEqual(entryFrom(formFrom(null),row),row)
- for(const entry of [{...row,type:[]},{...row,type:''},{...row,preset:{}},{...row,store:null},{...row,store:[]},{...row,retrieve:{extra:true}},{...row,extra:true},{...row,id:'changed'}])assert.throws(()=>importEntry(JSON.stringify(entry),row))
+ for(const entry of [{...row,type:[]},{...row,type:''},{...row,preset:{}},{...row,store:null},{...row,store:[]},{...row,content:'not rules'},{...row,id:'changed'}])assert.throws(()=>importEntry(JSON.stringify(entry),row))
+ const extended={...entry,extra:{keep:true},retrieve:{...entry.retrieve,extra:true}};assert.deepEqual(entryFrom(importEntry(JSON.stringify(extended),row),row),extended)
  const form=formFrom(entry);form['retrieve.rule']='';assert.deepEqual(entryFrom(form,row).retrieve,{on:[],strategy:[]})
 })
 test('trace-only indeterminate type is missing, while real and configured unknown types remain exact facets',async()=>{

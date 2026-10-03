@@ -4,7 +4,6 @@ import { isDeepStrictEqual } from 'node:util'
 export const clone = value => structuredClone(value)
 export function fail(code, message) { throw Object.assign(new Error(message), { code }) }
 const object = x => x && typeof x === 'object' && !Array.isArray(x)
-const fields = new Set(['id','adapterId','type','whitelist','blacklist','store','retrieve','preset'])
 export function safe(value, depth = 0) {
   if (value === undefined || typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint' || (typeof value === 'number' && !Number.isFinite(value))) fail('INVALID_JSON','Only finite JSON values are supported')
   if (depth > 40) fail('INVALID_CONFIG','Configuration nesting exceeds 40')
@@ -27,18 +26,19 @@ function rule(value) {
 }
 function validateFields(entry, partial = false) {
   if (!object(entry)) fail('INVALID_CONFIG','Entry/preset must be an object')
-  for (const key of Object.keys(entry)) if (!fields.has(key) || (partial && ['id','adapterId','preset'].includes(key))) fail('INVALID_CONFIG',`Unexpected configuration field: ${key}`)
+  if(Object.hasOwn(entry,'content'))fail('INVALID_CONFIG','正文不属于管理规则配置。')
+  for (const key of Object.keys(entry)) if (partial && ['id','adapterId','sourceAdapterId','preset'].includes(key)) fail('INVALID_CONFIG',`Unexpected configuration field: ${key}`)
   for (const key of ['whitelist','blacklist']) if (entry[key] !== undefined) {
     if (!Array.isArray(entry[key])) fail('INVALID_CONFIG',`${key} must be an array`)
     for (const selector of entry[key]) {
       if (!object(selector)||!Object.keys(selector).length) fail('INVALID_CONFIG','Empty scope selector')
-      for (const [k,v] of Object.entries(selector)) if (!['global','sessionId','branchId','authority','taskId','runId','attemptId'].includes(k) || (k==='global' ? v!==true : typeof v!=='string'||!v)) fail('INVALID_CONFIG',`Invalid scope selector: ${k}`)
+      for (const [k,v] of Object.entries(selector)) if (!['global','sessionId','workspaceId','characterId','presetId','userId','branchId','authority','taskId','runId','attemptId'].includes(k) || (k==='global' ? v!==true : typeof v!=='string'||!v)) fail('INVALID_CONFIG',`Invalid scope selector: ${k}`)
     }
   }
+  if(entry.sourceAdapterId!==undefined&&(typeof entry.sourceAdapterId!=='string'||!entry.sourceAdapterId))fail('INVALID_CONFIG','sourceAdapterId must be a stable source identity')
   if (entry.type !== undefined && (typeof entry.type !== 'string'||!entry.type)) fail('INVALID_CONFIG','type must be a nonempty string')
   for (const key of ['store','retrieve']) if (entry[key] !== undefined) {
     const v=entry[key]; if (!object(v)) fail('INVALID_CONFIG',`${key} must be an object`)
-    for (const k of Object.keys(v)) if (!['on','rule','strategy'].includes(k)) fail('INVALID_CONFIG',`Unknown ${key} field: ${k}`)
     if ('on' in v && !(typeof v.on==='string'||(Array.isArray(v.on)&&v.on.every(x=>typeof x==='string')))) fail('INVALID_CONFIG','Invalid on')
     if ('rule' in v) rule(v.rule)
     if ('strategy' in v && !(typeof v.strategy==='string'||(Array.isArray(v.strategy)&&v.strategy.every(x=>object(x)&&typeof x.operation==='string')))) fail('INVALID_CONFIG','Invalid strategy')

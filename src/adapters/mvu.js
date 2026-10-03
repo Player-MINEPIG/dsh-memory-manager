@@ -18,6 +18,7 @@ export function installMvu(manager,service,usage){
   let disposed=false
   const unuse=service.registerUsage(async request=>{
     if(disposed)return {enabled:false,reason:'manager-unloaded'}
+    if(!manager.isAdapterEnabled(adapter.id))return {enabled:false,reason:'adapter-disabled'}
     const native=nativeDependencyLease(manager,adapter,request,()=>disposed);if(native)return native
     const document=manager.configuration.document,reloadEpoch=manager.configuration.pending,lifetime=manager.lifetimes.get(adapter),conditions=new Map(usage.conditions),catalogRevision=manager.optionCatalog({adapterId:adapter.id}).catalogRevision
     const {config,revision}=manager.getConfig(request.id)
@@ -30,12 +31,13 @@ export function installMvu(manager,service,usage){
     if(capabilityErrors(adapter,config,conditions,usage.operations).length)return {enabled:false,reason:'capability-mismatch'}
     await service.validateConfig(config)
     const behavior=config[mode]
-    if(!applies(config,request.scope))return {enabled:false,reason:'scope'}
+    const scopeLease=await manager.scopeDirectory.context(request.scope??{},{trustedSource:true})
+    if(!applies(config,scopeLease.scope))return {enabled:false,reason:'scope'}
     if(!behavior||!(Array.isArray(behavior.on)?behavior.on:[behavior.on]).includes(request.on))return {enabled:false,reason:'timing'}
-    const enabled=await usage.rule(behavior.rule??true,{...request.event,on:request.on,scope:request.scope},conditions)
+    const enabled=await usage.rule(behavior.rule??true,{...request.event,on:request.on,scope:scopeLease.scope},conditions)
     if(disposed)return {enabled:false,reason:'manager-unloaded'}
     const owns=()=>{try{manager.assertOwner(adapter,request.id);return true}catch{return false}}
-    const checkCurrent=()=>owns()&&manager.optionCatalog({adapterId:adapter.id}).catalogRevision===catalogRevision&&!disposed&&!lifetime?.signal.aborted&&manager.adapters.get(adapter.id)===adapter&&manager.lifetimes.get(adapter)===lifetime&&!manager.configuration.error&&manager.configuration.document===document&&manager.configuration.document.revision===revision&&manager.configuration.pending===reloadEpoch&&conditions.size===usage.conditions.size&&[...conditions].every(([id,condition])=>usage.conditions.get(id)===condition)
+    const checkCurrent=()=>scopeLease.checkCurrent()&&manager.isAdapterEnabled(adapter.id)&&owns()&&manager.optionCatalog({adapterId:adapter.id}).catalogRevision===catalogRevision&&!disposed&&!lifetime?.signal.aborted&&manager.adapters.get(adapter.id)===adapter&&manager.lifetimes.get(adapter)===lifetime&&!manager.configuration.error&&manager.configuration.document===document&&manager.configuration.document.revision===revision&&manager.configuration.pending===reloadEpoch&&conditions.size===usage.conditions.size&&[...conditions].every(([id,condition])=>usage.conditions.get(id)===condition)
     if(!checkCurrent())return {enabled:false,reason:'config-changed'}
     return {enabled,configRevision:revision,strategy:behavior.strategy,reason:enabled?'matched':'rule',checkCurrent}
   })

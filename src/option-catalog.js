@@ -54,15 +54,16 @@ export function optionCatalog(manager,{adapterId,id,sessionId}={}){
   fields[mode+'.rule'].push({id:'always',label:'始终满足',value:true,adapterIds:[],presetIds:[],available:true},{id:'never',label:'始终不满足',value:false,adapterIds:[],presetIds:[],available:true})
   for(const condition of conditions)fields[mode+'.rule'].push({...condition,value:condition.id,presetIds:[],kind:'condition'})
  }
- for(const preset of presets)for(const field of Object.keys(fields).filter(f=>f!=='preset')){
+ for(const preset of presets)for(const field of Object.keys(fields).filter(f=>!['preset','adapterId'].includes(f))){
   const value=at(preset.configuration,field);if(value===undefined)continue
   const values=field.endsWith('.on')&&Array.isArray(value)?value:[value]
   for(const v of values)append(field,{id:`preset:${preset.id}:${field}:${canonical(v)}`,label:preset.label+' · '+field,value:clone(v),adapterIds:preset.adapterIds,presetIds:[preset.id],available:preset.available,reason:preset.reason})
  }
  for(const [kind,field] of [['rules','rule'],['strategies','strategy']])for(const option of manager.configuration.document.catalog?.[kind]??[])for(const mode of option.modes??['store','retrieve']){const ids=compatible({[mode]:{[field]:option.value}}).filter(id=>!option.adapterIds?.length||option.adapterIds.includes(id));append(mode+'.'+field,{...clone(option),adapterIds:ids.length?ids:option.adapterIds??[],presetIds:[],origin:'local',...(ids.length?providerStatus(ids):{available:false,reason:'组合引用的能力未注册或与来源不兼容。'})})}
  for(const mode of ['store','retrieve'])if(selected&&selected.optionCatalog?.modes?.[mode]?.supported!==true)for(const child of ['on','rule','strategy'])fields[mode+'.'+child]=fields[mode+'.'+child].map(option=>({...option,available:false,reason:selected.optionCatalog?.modes?.[mode]?.reason??'当前来源不支持此模式。'}))
+ fields.adapterId=adapters.map(a=>({id:a.id,label:a.name??a.id,value:a.id,adapterIds:[],presetIds:[],available:manager.isAdapterEnabled(a.id),reason:manager.isAdapterEnabled(a.id)?undefined:'adapter 已停用；可选择草稿，保存会明确拒绝。'}))
  const scopes=[{id:'global',label:'所有作用域',value:{global:true},description:'匹配所有范围；并非资源访问授权。'},...(sessionId?[{id:'session',label:'当前会话',value:{sessionId}}]:[])]
  for(const field of ['whitelist','blacklist'])fields[field]=scopes.map(s=>({...s,value:[s.value],adapterIds:[],presetIds:[],available:true}))
- const catalogRevision=createHash('sha256').update(JSON.stringify([manager.catalogGeneration??0,conditions,operations,presets,manager.configuration.document.catalog??null,adapters.map(a=>a.optionCatalog??null)])).digest('hex')
- return {version:1,catalogRevision,revision:manager.configuration.document.revision,id,adapterId,adapters:adapters.map(a=>({id:a.id,label:a.name??a.id,strategyOwner:a.strategyOwner??'manager',modes:clone(a.optionCatalog?.modes??{})})),fields,conditions,operations,presets,modes:clone(selected?.optionCatalog?.modes??{}),requestSourceAvailable:!!manager.requestSourceAvailable,documentation:'/api/dsh-memory-manager/options-documentation'}
+ const catalogRevision=createHash('sha256').update(JSON.stringify([manager.catalogGeneration??0,conditions,operations,presets,manager.configuration.document.catalog??null,adapters.map(a=>[a.id,manager.isAdapterEnabled(a.id),a.optionCatalog??null])])).digest('hex')
+ return {directories:manager.scopeDirectory.catalog(),scopeKinds:{global:'所有作用域',sessionId:'会话',workspaceId:'Workspace',characterId:'角色卡',presetId:'Tavern 预设',userId:'Persona / 用户角色'},version:1,catalogRevision,revision:manager.configuration.document.revision,id,adapterId,adapters:adapters.map(a=>({id:a.id,label:a.name??a.id,strategyOwner:a.strategyOwner??'manager',enabled:manager.isAdapterEnabled(a.id),modes:clone(a.optionCatalog?.modes??{})})),fields,conditions,operations,presets,modes:clone(selected?.optionCatalog?.modes??{}),requestSourceAvailable:!!manager.requestSourceAvailable,documentation:'/api/dsh-memory-manager/options-documentation'}
 }

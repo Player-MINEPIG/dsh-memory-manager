@@ -4,7 +4,13 @@ import { Configuration,clone,fail,effective,applies,safe } from './config.js'
 import {configurationFilterFields,filterValues,validateFilters,matchesConfigurationFilters} from './filters.js'
 import {optionCatalog,validateAdapterCatalog} from './option-catalog.js'
 import {configurationSnapshot,validateEntry,saveEntry} from './configuration-editor.js'
+import {ScopeDirectory} from './scope-directory.js'
+import {adapterCatalog,setAdapterEnabled} from './adapter-controls.js'
 export class MemoryManager {
+  scopeDirectory=new ScopeDirectory();disabledAdapters=new Set()
+  isAdapterEnabled(id){return this.adapters.has(id)&&!this.disabledAdapters.has(id)}
+  adapterCatalog(){return adapterCatalog(this)}
+  setAdapterEnabled(args){return setAdapterEnabled(this,args)}
   catalogGeneration=0
   protocolVersion=1
   adapters=new Map(); lifetimes=new Map(); owners=new Map(); reservations=new Map(); traces=[]; active=new Map(); diagnostics=[]; pending=Promise.resolve()
@@ -76,11 +82,11 @@ export class MemoryManager {
     const turns=selected(turn),kinds=selected(turnKind),states=selected(status),sources=selected(adapterId)
     const records=[],diagnostics=[...this.diagnostics],catalogs=[]
     for(const a of this.adapters.values()) {
-      if(!matches(sources,a.id)) continue
-      try {const listed=await this.invoke(a,'list',{scope,signal});for(const r of listed) {this.claim(a,r);diagnostics.push(...(r.diagnostics??[]).map(d=>({...d,adapterId:a.id})));records.push({...clone(r),adapterId:a.id,authority:r.authority??a.authority,capabilities:{edit:!!a.update,copy:!!a.copy,management:!!a.setManagementMode,...r.capabilities}})}catalogs.push({adapterId:a.id,count:listed.length,scope:scope.sessionId?'session':'global',description:a.describeScope?.(scope)})}
+      if(!matches(sources,a.id)||!this.isAdapterEnabled(a.id)) continue
+      try {const listed=await this.invoke(a,'list',{scope,signal});for(const r of listed) {this.claim(a,r);diagnostics.push(...(r.diagnostics??[]).map(d=>({...d,adapterId:a.id})));records.push({...clone(r),adapterId:a.id,authority:r.authority??a.authority,capabilities:{...r.capabilities,edit:!!a.update&&r.capabilities?.edit!==false,copy:!!a.copy&&r.capabilities?.copy!==false,management:!!a.setManagementMode&&r.capabilities?.management!==false}})}catalogs.push({adapterId:a.id,count:listed.length,scope:scope.sessionId?'session':'global',description:a.describeScope?.(scope)})}
       catch(e) {catalogs.push({adapterId:a.id,count:null,scope:scope.sessionId?'session':'global'});diagnostics.push({adapterId:a.id,code:e.code??'SOURCE_ERROR',message:e.message})}
     }
-    for(const entry of this.configuration.document.entries) if(matches(sources,entry.adapterId)&&!records.some(r=>r.id===entry.id)) records.push({id:entry.id,type:entry.type,adapterId:entry.adapterId,missing:true,capabilities:{edit:false,copy:false}})
+    for(const entry of this.configuration.document.entries) if(matches(sources,entry.sourceAdapterId??entry.adapterId)&&!records.some(r=>r.id===entry.id)) records.push({id:entry.id,type:entry.type,adapterId:entry.sourceAdapterId??entry.adapterId,missing:true,capabilities:{edit:false,copy:false}})
     const inScope=t=>!scope.sessionId||t.sessionId===scope.sessionId
     const facets={turns:[...new Set([...this.traces,...records.flatMap(r=>r.facts??[])].filter(inScope).filter(t=>t.turn!=null).map(t=>String(t.turn)))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}))}
     const filter=t=>inScope(t)&&matches(turns,t.turn)&&matches(kinds,t.turnKind)
@@ -94,7 +100,7 @@ export class MemoryManager {
     const filteredRows=rows.filter(r=>matches(states,r.status)&&matchesConfigurationFilters(r,filters))
     return {protocolVersion:1,revision:this.configuration.document.revision,configError:this.configuration.error,rows:filteredRows,diagnostics,catalogs,facets,scope:scope.sessionId?{sessionId:scope.sessionId}:{global:true},adapters:[...this.adapters.values()].map(a=>({id:a.id,name:a.name,authority:a.authority}))}
   }
-  async read({adapterId,id,scope={},signal}) {const a=this.adapters.get(adapterId);if(!a)fail('SOURCE_UNAVAILABLE','Source is unavailable');const result=await this.invoke(a,'read',{id,scope,signal});if(result)this.claim(a,result,id);else {const reservation=this.reservations.get(id);if(reservation?.adapter===a&&!reservation.tokens.size)this.reservations.delete(id)}return clone(result)}
+  async read({adapterId,id,sourceAdapterId,scope={},signal}) {if(sourceAdapterId&&sourceAdapterId!==adapterId){const target=this.adapters.get(adapterId);if(!target||!this.isAdapterEnabled(adapterId)||target.strategyOwner==='source'||typeof target.validateResourceRoute!=='function')fail('ROUTE_UNSUPPORTED','所选 adapter 没有声明此资源路由能力。');const route=await this.invoke(target,'validateResourceRoute',{id,sourceAdapterId,scope,signal});if(route?.supported!==true||route.id!==id||route.sourceAdapterId!==sourceAdapterId)fail('ROUTE_UNSUPPORTED','adapter 未确认实际资源身份与路由。');adapterId=sourceAdapterId}const a=this.adapters.get(adapterId);if(!a)fail('SOURCE_UNAVAILABLE','Source is unavailable');const result=await this.invoke(a,'read',{id,scope,signal});if(result)this.claim(a,result,id);else {const reservation=this.reservations.get(id);if(reservation?.adapter===a&&!reservation.tokens.size)this.reservations.delete(id)}return clone(result)}
   async update({adapterId,id,scope={},content,expectedRevision,operationId,signal}) {
     const a=this.adapters.get(adapterId);if(!a?.update)fail('READ_ONLY','Source does not support editing')
     if(expectedRevision===undefined||typeof operationId!=='string'||!operationId)fail('INVALID_UPDATE','Revision and operationId are required')
@@ -109,10 +115,10 @@ export class MemoryManager {
     const reservation=this.reservations.get(record.id);if(reservation?.adapter===adapter){reservation.uncertain=false;if(!reservation.tokens.size)this.reservations.delete(record.id)}
   }
   async invoke(adapter,method,args){
-    const lifetime=this.lifetimes.get(adapter);if(!lifetime||lifetime.signal.aborted)fail('SOURCE_UNAVAILABLE','Source was unloaded')
+    const lifetime=this.lifetimes.get(adapter);if(!lifetime||lifetime.signal.aborted||!this.isAdapterEnabled(adapter.id))fail('SOURCE_UNAVAILABLE','Source was unloaded or disabled')
     const signal=args.signal?AbortSignal.any([args.signal,lifetime.signal]):lifetime.signal
     signal.throwIfAborted();const result=await adapter[method]({...args,signal});signal.throwIfAborted()
-    if(this.adapters.get(adapter.id)!==adapter)fail('SOURCE_UNAVAILABLE','Source registration changed')
+    if(this.adapters.get(adapter.id)!==adapter||!this.isAdapterEnabled(adapter.id))fail('SOURCE_UNAVAILABLE','Source registration changed or disabled')
     return result
   }
   async setManagementMode({adapterId,...args}){const a=this.adapters.get(adapterId);if(!a?.setManagementMode)fail('UNSUPPORTED','Source does not expose management ownership');return this.mutate(a,'setManagementMode',args,[args.id],args.id)}

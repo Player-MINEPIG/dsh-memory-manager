@@ -17,13 +17,13 @@ const source=await readFile(root+'/src/client-options.js','utf8')
 
 globalThis.__dmmReviewReact={
   createElement:(type,props,...children)=>({type,props:{...props,children:children.flat(Infinity)}}),
-  useState:value=>[value,()=>{}]
+  useState:value=>[typeof value==='function'?value():value,()=>{}]
 }
-const reviewed=source.replace("import {createElement as h,useState} from 'react'",'const {createElement:h,useState}=globalThis.__dmmReviewReact')
+const reviewed=source.replace("import {createElement as h,useState,useEffect} from 'react'",'const {createElement:h,useState}=globalThis.__dmmReviewReact;const useEffect=()=>{}')
   .replace("'./option-schema.js'",JSON.stringify(product('src/option-schema.js')))
   .replace("'./client-form.js'",JSON.stringify(product('src/client-form.js')))
-const finalSource=reviewed.replace("'./option-availability.js'",JSON.stringify(product('src/option-availability.js')))
-const {OptionPage}=await import('data:text/javascript;base64,'+Buffer.from(finalSource).toString('base64'))
+const finalSource=reviewed.replace("'./canonical.js'",JSON.stringify(product('src/canonical.js'))).replace("import {DirectoryPicker} from './client-directory.js'",'const DirectoryPicker=()=>null').replace("'./option-availability.js'",JSON.stringify(product('src/option-availability.js')))
+const {OptionContents:OptionPage}=await import('data:text/javascript;base64,'+Buffer.from(finalSource+'\nexport {OptionContents}').toString('base64'))
 function flatten(node){
   if(node==null||typeof node!=='object')return []
   if(typeof node.type==='function')return flatten(node.type(node.props))
@@ -39,18 +39,18 @@ function setup(){
 const entry=rule=>({id:'synthetic:1',adapterId:'synthetic',type:'text',whitelist:[{global:true}],retrieve:{on:'request',rule}})
 const check=(m,e)=>m.validateEntry({id:e.id,adapterId:e.adapterId,entry:e,expectedRevision:1})
 
-test('R1: top-level and nested retrieve controls both reject store-only condition',async()=>{
+test('R1: top-level and nested controls allow selection; final validation rejects store-only condition',async()=>{
   const {m,u}=setup();u.registerCondition({id:'store-only',label:'Store only',modes:['store'],test:()=>{throw Error('must not execute')}})
   const catalog=m.optionCatalog({id:'synthetic:1',adapterId:'synthetic'})
   assert.equal(catalog.fields['retrieve.rule'].find(o=>o.id==='store-only').available,true)
   let selected;const nodes=page('retrieve.rule',true,catalog,v=>selected=v)
   const card=nodes.find(n=>n.type==='label'&&n.props.className==='dmm-option-card'&&JSON.stringify(n).includes('Store only'))
   const radio=flatten(card).find(n=>n.type==='input')
-  assert.equal(radio.props.disabled,true);radio.props.onChange();assert.equal(selected,undefined)
+  assert.equal(radio.props.disabled,false);radio.props.onChange();assert.equal(selected,'store-only')
   const report=await check(m,entry('store-only'));assert.equal(report.valid,false)
   assert(report.diagnostics.some(d=>d.code==='CAPABILITY_MISMATCH'&&d.message.includes('模式')))
   const nested=page('retrieve.rule','store-only',catalog).find(n=>n.type==='option'&&n.props.value==='store-only')
-  assert.equal(nested.props.disabled,true)
+  assert(!nested.props.disabled)
 })
 
 test('R1: draft type and preset override update both card and nested availability',async()=>{
@@ -61,9 +61,9 @@ test('R1: draft type and preset override update both card and nested availabilit
   assert.equal(catalog.conditions.find(o=>o.id==='number-condition').available,true)
   assert.equal(catalog.operations.find(o=>o.id==='number-operation').available,true)
   const op=page('retrieve.strategy',[{operation:'number-operation'}],catalog).find(n=>n.type==='option'&&n.props.value==='number-operation')
-  assert.equal(op.props.disabled,true)
+  assert(!op.props.disabled)
   const numberPage=page('retrieve.rule','number-condition',catalog,()=>{},{effectiveType:'number'})
-  assert.equal(numberPage.find(n=>n.type==='option'&&n.props.value==='number-condition').props.disabled,false)
+  assert(!numberPage.find(n=>n.type==='option'&&n.props.value==='number-condition').props.disabled)
   const numberCard=numberPage.find(n=>n.type==='label'&&n.props.className==='dmm-option-card'&&JSON.stringify(n).includes('Number condition'))
   assert.equal(flatten(numberCard).find(n=>n.type==='input').props.disabled,false)
   assert.equal(effectiveDraftType({type:'text',preset:'numeric'},[{id:'numeric',configuration:{type:'number'}}]),'number')
@@ -116,14 +116,14 @@ test('R3: child clears preserve intentional empty mode; explicit section removal
   assert.equal((await check(m,omitted)).valid,true)
 })
 
-test('unsupported modes and absent source presets remain disabled; filter selections do not grant execution',()=>{
+test('unsupported modes and absent-source presets remain selectable; selection does not grant execution',()=>{
   const m=new MemoryManager({configPath:'/unused'})
   const catalog=m.optionCatalog()
   assert.equal(catalog.fields.preset.find(o=>o.id==='builtin:worldbook-retrieve').available,false)
   const presets=page('preset',undefined,catalog)
-  assert(presets.filter(n=>n.type==='input'&&n.props.type==='radio').every(n=>n.props.disabled))
+  assert(presets.filter(n=>n.type==='input'&&n.props.type==='radio').every(n=>!n.props.disabled))
   const rules=page('retrieve.rule',true,catalog)
-  assert(rules.filter(n=>n.type==='input'&&n.props.type==='radio').every(n=>n.props.disabled))
+  assert(rules.filter(n=>n.type==='input'&&n.props.type==='radio').every(n=>!n.props.disabled))
 })
 
 test('local catalog metadata rejects every supplied nonmatching type before publishing and retains usable last-good state',async t=>{
@@ -152,7 +152,7 @@ test('named type-specific combinations remain composable and all their reference
   assert.equal(catalog.fields[field].find(o=>o.label===label).available,true)
   for(const type of ['text','number']){
    const card=page(field,undefined,catalog,()=>{},{effectiveType:type}).find(n=>n.type==='label'&&n.props.className==='dmm-option-card'&&JSON.stringify(n).includes(label))
-   assert.equal(flatten(card).find(n=>n.type==='input').props.disabled,type==='text')
+   assert.equal(flatten(card).find(n=>n.type==='input').props.disabled,false)
   }
  }
 })
@@ -165,7 +165,7 @@ test('replacing a type-overriding preset evaluates the candidate against local t
   const nodes=page('preset',currentPreset,catalog,()=>{},{localType,effectiveType:effectiveDraftType({type:localType,preset:currentPreset},catalog.presets)})
   for(const [candidate,type] of [['textRule','text'],['numberRule','number']]){
    const card=nodes.find(n=>n.type==='label'&&n.props.className==='dmm-option-card'&&n.props.children.some(c=>c?.props?.children?.some(t=>t?.type==='strong'&&t.props.children[0]===candidate)))
-   assert.equal(flatten(card).find(n=>n.type==='input').props.disabled,localType!==type)
+   assert.equal(flatten(card).find(n=>n.type==='input').props.disabled,false)
    assert.equal((await check(m,{...entry(true),type:localType,preset:candidate})).valid,localType===type)
   }
  }

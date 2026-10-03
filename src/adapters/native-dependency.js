@@ -11,7 +11,7 @@ export function nativeDependencyLease(manager,adapter,request,isDisposed){
  const checkCurrent=()=>{
   try{
    manager.assertOwner(adapter,request.id)
-   return !isDisposed()&&!!lifetime&&!lifetime.signal.aborted&&manager.adapters.get(adapter.id)===adapter&&manager.lifetimes.get(adapter)===lifetime&&manager.configuration.document===document&&manager.configuration.pending===epoch&&manager.configuration.error===error&&manager.optionCatalog({adapterId:adapter.id}).catalogRevision===catalogRevision
+   return manager.isAdapterEnabled(adapter.id)&&!isDisposed()&&!!lifetime&&!lifetime.signal.aborted&&manager.adapters.get(adapter.id)===adapter&&manager.lifetimes.get(adapter)===lifetime&&manager.configuration.document===document&&manager.configuration.pending===epoch&&manager.configuration.error===error&&manager.optionCatalog({adapterId:adapter.id}).catalogRevision===catalogRevision
   }catch{return false}
  }
  return {enabled:checkCurrent(),reason:'native-dependency',configRevision:null,strategy:clone(strategies[0].value),checkCurrent}

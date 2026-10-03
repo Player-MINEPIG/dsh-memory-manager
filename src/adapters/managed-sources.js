@@ -11,6 +11,7 @@ export function installManagedSources(manager,service,usage){
    let disposed=false
    const unuse=adapter.registerUsage(async request=>{
     if(disposed)return {enabled:false,reason:'manager-unloaded'}
+    if(!manager.isAdapterEnabled(adapter.id))return {enabled:false,reason:'adapter-disabled'}
     const native=nativeDependencyLease(manager,adapter,request,()=>disposed);if(native)return native
     if(request.managementMode!=='managed')return undefined
     const document=manager.configuration.document,epoch=manager.configuration.pending,lifetime=manager.lifetimes.get(adapter),conditions=new Map(usage.conditions),catalogRevision=manager.optionCatalog({adapterId:adapter.id}).catalogRevision
@@ -21,12 +22,13 @@ export function installManagedSources(manager,service,usage){
     manager.assertOwner(adapter,request.id)
     if(capabilityErrors(adapter,config,conditions,usage.operations).length)return {enabled:false,reason:'capability-mismatch'}
     await adapter.validateConfig(clone(config))
-    if(!applies(config,request.scope))return {enabled:false,reason:'scope'}
+    const scopeLease=await manager.scopeDirectory.context(request.scope??{},{trustedSource:true})
+    if(!applies(config,scopeLease.scope))return {enabled:false,reason:'scope'}
     const behavior=config[mode]
     if(!behavior||!(Array.isArray(behavior.on)?behavior.on:[behavior.on]).includes(request.on))return {enabled:false,reason:'timing'}
-    const enabled=await usage.rule(behavior.rule??true,{...request.event,on:request.on,scope:request.scope},conditions)
+    const enabled=await usage.rule(behavior.rule??true,{...request.event,on:request.on,scope:scopeLease.scope},conditions)
     const owns=()=>{try{manager.assertOwner(adapter,request.id);return true}catch{return false}}
-    const checkCurrent=()=>owns()&&manager.optionCatalog({adapterId:adapter.id}).catalogRevision===catalogRevision&&!disposed&&!lifetime.signal.aborted&&manager.adapters.get(adapter.id)===adapter&&manager.lifetimes.get(adapter)===lifetime&&!manager.configuration.error&&manager.configuration.document===document&&manager.configuration.pending===epoch&&conditions.size===usage.conditions.size&&[...conditions].every(([key,value])=>usage.conditions.get(key)===value)
+    const checkCurrent=()=>scopeLease.checkCurrent()&&manager.isAdapterEnabled(adapter.id)&&owns()&&manager.optionCatalog({adapterId:adapter.id}).catalogRevision===catalogRevision&&!disposed&&!lifetime.signal.aborted&&manager.adapters.get(adapter.id)===adapter&&manager.lifetimes.get(adapter)===lifetime&&!manager.configuration.error&&manager.configuration.document===document&&manager.configuration.pending===epoch&&conditions.size===usage.conditions.size&&[...conditions].every(([key,value])=>usage.conditions.get(key)===value)
     if(!checkCurrent())return {enabled:false,reason:'config-changed'}
     return {enabled,reason:enabled?'matched':'rule',configRevision:revision,strategy:behavior.strategy,checkCurrent}
    })

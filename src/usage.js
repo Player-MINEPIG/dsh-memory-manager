@@ -23,12 +23,14 @@ export class Usage {
   async trigger({id,event,mode='retrieve',preview=false,signal,configurationSnapshot}){
     if(!['store','retrieve'].includes(mode)||!event?.eventId||!event.on)fail('INVALID_TRIGGER','Trigger requires mode, on and stable eventId')
     if(this.manager.configuration.error)fail('CONFIG_UNAVAILABLE','Configuration is invalid; managed execution is blocked')
-    const {config,revision}=configurationSnapshot??this.manager.getConfig(id),scope=event.scope??{},behavior=config?.[mode]
+    const scopeLease=await this.manager.scopeDirectory.context(event.scope??{}),scope=scopeLease.scope
+    event={...event,scope}
+    const {config,revision}=configurationSnapshot??this.manager.getConfig(id),behavior=config?.[mode]
     if(!config||!applies(config,scope)||!behavior||!(Array.isArray(behavior.on)?behavior.on:[behavior.on]).includes(event.on))return {matched:false,reason:'scope-or-timing'}
     const adapter=this.manager.adapters.get(config.adapterId)
-    if(!adapter)fail('SOURCE_UNAVAILABLE',config.adapterId)
+    if(!adapter||!this.manager.isAdapterEnabled(config.adapterId))fail('SOURCE_UNAVAILABLE',config.adapterId)
     const generation=this.manager.lifetimes.get(adapter),document=this.manager.configuration.document,epoch=this.manager.configuration.pending,operations=new Map(this.operations),conditions=new Map(this.conditions),catalogRevision=this.manager.optionCatalog({adapterId:adapter.id}).catalogRevision
-    const checkCurrent=()=>{try{this.manager.assertOwner(adapter,id);return !this.manager.configuration.error&&this.manager.configuration.document===document&&this.manager.configuration.pending===epoch&&this.manager.adapters.get(adapter.id)===adapter&&this.manager.lifetimes.get(adapter)===generation&&!generation.signal.aborted&&this.manager.optionCatalog({adapterId:adapter.id}).catalogRevision===catalogRevision}catch{return false}}
+    const checkCurrent=()=>{try{this.manager.assertOwner(this.manager.adapters.get(config.sourceAdapterId??config.adapterId),id);return scopeLease.checkCurrent()&&this.manager.isAdapterEnabled(adapter.id)&&this.manager.isAdapterEnabled(config.sourceAdapterId??config.adapterId)&& !this.manager.configuration.error&&this.manager.configuration.document===document&&this.manager.configuration.pending===epoch&&this.manager.adapters.get(adapter.id)===adapter&&this.manager.lifetimes.get(adapter)===generation&&!generation.signal.aborted&&this.manager.optionCatalog({adapterId:adapter.id}).catalogRevision===catalogRevision}catch{return false}}
     const assertCurrent=()=>{signal?.throwIfAborted();if(!checkCurrent())fail('CAPABILITY_CHANGED','配置、来源或能力注册已变化。')}
     if(adapter.validateConfig)await adapter.validateConfig(clone(config))
     if(this.manager.adapters.get(config.adapterId)!==adapter)fail('SOURCE_UNAVAILABLE','Source registration changed')
@@ -46,7 +48,7 @@ export class Usage {
     const fact={adapterId:config.adapterId,id,eventId:event.eventId,sessionId:scope.sessionId,turn:event.turn,turnKind:event.turnKind??'unknown',requestId:event.requestId??event.eventId,executionKey:key,configRevision:revision,strategyRevision}
     if(!preview){this.running.add(key);this.manager.recordTrace({...fact,phase:'started'});this.manager.recordTrace({...fact,phase:'triggered'})}
     try{
-      let value=await this.manager.read({adapterId:config.adapterId,id,scope,signal})
+      let value=await this.manager.read({adapterId:config.adapterId,sourceAdapterId:config.sourceAdapterId,id,scope,signal})
       assertCurrent()
       if(value==null)fail('RESOURCE_UNAVAILABLE',id)
       const resourceRevision=value.revision??null

@@ -59,11 +59,35 @@ Local declarative named combinations reference these registered capabilities; lo
 
 ## 使用与内置预设
 
-编辑选项按资源提供方、存储／读取模式及当前草稿的生效类型判断可用性；预设明确提供的 type 优先。切换预设时以候选预设的 type（未提供时使用本地 type）判断，不沿用旧预设的覆盖值。已有不兼容值继续显示并保留，可明确替换或移除；筛选仍可选择这些历史值。编辑已知条件参数会保留 condition 对象中已有的扩展成员。
+已注册选项均可选择与组合。来源、模式和类型适用性作为提示，可主动筛选；不会提前禁选或隐藏。最终校验与保存检查注册能力、参数、来源支持和路由冲突。预设明确提供的 type 优先；编辑已知条件参数会保留 condition 对象中已有的扩展成员。
 
 “清空本地字段”仅删除该子字段，有意设置的空 store/retrieve 对象仍会保留。“移除本地存储配置／读取配置”删除整个本地模式及其存在标记；预设引用不变，预设提供的模式仍会生效，需调整预设引用才能去除。保存或校验期间不能移除模式。
 
-点击配置字段进入独立选项页，搜索名称或说明，再按资源提供方或预设缩小范围。选择仅修改草稿；返回后先校验，再保存。筛选页同字段内 OR、不同字段间 AND，空选不限。筛选只比较值，不运行条件。未知条件、操作和参数保留原值；可明确替换或移除，不要求手输 JSON。正文编辑遵循来源格式，是独立操作。
+点击配置字段进入独立选项页，搜索名称或说明，再按资源提供方或预设缩小范围。选择只修改本页草稿；左上返回丢弃本页修改，底部“保存并返回”提交到父草稿，不写文件。父页“保存管理配置（写入文件）”重新校验，检查总配置 revision 与磁盘 CAS，通过后原子写入。失败与冲突保留草稿，不覆盖文件。筛选页也使用独立草稿，保存并返回才应用。筛选同字段内 OR、不同字段间 AND，空选不限，不执行条件。未知安全 JSON 扩展字段、条件成员和参数保留原值，正文不属于管理规则。
+
+## Adapter
+
+表格中筛选按钮左侧的 Adapter 页展示已注册资源 adapter 与目录 adapter。开关立即影响当前 manager 的查询、规则执行和租约；不删除正文或规则文件。卸载由 Host 插件管理负责，再次注册或重新启用需重新校验。开关为当前进程状态，重启恢复默认启用。缺失 adapter 显示可信插件的安装与版本说明；manager 不安装仓库、不更改权限。
+
+资源权威来源保持只读。条目的 `adapterId` 可以选择任何已注册规则路由；跨源时增加 `sourceAdapterId` 保存原正文来源。所选 adapter 必须实现只读 `validateResourceRoute({id,sourceAdapterId,scope,signal})` 并确认 `{supported:true,id,sourceAdapterId}`。当前来源固定策略的跨源路由不受支持，保存明确报告冲突。manager-owned 策略在受支持路由中仍由原来源读取正文；原来源权限、版本和稳定 ID 始终有效。此设置不迁移、复制或接管正文。
+
+“规则由来源执行 / 规则委托记忆管理执行”只说明规则执行模式。正文编辑能力单独展示：只有来源提供 update 且资源未声明只读时才显示编辑器；提交仍由来源验证权限、CAS 与 operationId。切换 managed 不增加权限，Skill 注册表、内嵌世界书等只读来源仍可能不可编辑。跨源规则设置也不授予正文写权限。
+
+“移除本地存储 / 读取配置”只移除本地规则覆盖，回到预设或默认值；不删除资源正文。来源原生行为是否继续由来源自己的模式和权限决定。
+
+## Scope
+
+白名单与黑名单用来源实体目录选择稳定 ID，不要求填写 ID。会话按标题与 Workspace 查找；Workspace 按注册名称选择。DSH adapter 使用公开 SessionStore 的已加载会话与已缓存的 title projection 和 WorkspaceRegistry 的内存注册投影，绝不读取事件日志或调用全量持久会话搜索。尚未加载的会话不会冒充可见；需要来源提供分页元数据接口后才能纳入。
+
+可选 `tavernScopeCatalog` Host 服务 v1 提供分页 `searchScopes({field,query,cursor,limit})`，field 为 characterId / presetId / userId，仅返回 `{items:[{id,name}],nextCursor}`。角色卡对应来源 selection.characterCardId；presetId 是 Tavern/ST prompt preset；userId 是 RP Persona，不是 DSH 登录账号。缺服务的版本显示安装说明，绝不回退到会读取全部正文的旧列表 API。
+
+目录 provider 负责每页实际可见性校验。当前本机 Host admission 与来源已有权限边界保持有效；不新增或伪造 principal ACL。目录可见、选择 scope 或修改名单均不授予内容访问或 prompt 使用权。
+
+执行时事实由可信 Host 的 `resolveScopeContext` 提供，浏览器不能传入 Workspace/角色/预设/Persona 标签冒充事实。Host-only lease 必须保留并在每次 await 后及最终使用前检查；adapter 停用/卸载、selection 或目录代次变化使租约失效。未注册事实不会匹配该 scope 条件。
+
+## 浏览器文档
+
+本页和 API / VALIDATION / README 通过 `/api/dsh-memory-manager/documentation?document=OPTIONS` 渲染为 HTML，保持 Markdown 单一来源。HTML、代码和链接均转义/校验；CSP 禁止脚本与外部资源执行，不加载外部 JavaScript。
 
 | 管理预设 ID | 来源与明确覆盖的字段 |
 | --- | --- |
