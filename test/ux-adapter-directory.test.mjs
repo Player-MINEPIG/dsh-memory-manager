@@ -38,3 +38,9 @@ test('Host admission rejects directory access before source callback; HTML rende
  const m=new MemoryManager({configPath:'/unused'});let calls=0;m.scopeDirectory.register({id:'private',kinds:['userId'],search:()=>{calls++;return {items:[]}}});const req={url:'/api/dsh-memory-manager/scope-directory?providerId=private&kind=userId',method:'GET',headers:{}},res={statusCode:200,setHeader(){},end(){}};await handler(m,{admit:()=>({rejection:403})})(req,res);assert.equal(res.statusCode,403);assert.equal(calls,0)
  const html=renderDocumentation('# Title\n## Scope\n<script src="https://evil"></script>\n[bad](javascript:alert(1))\n| A | B |\n| --- | --- |\n| one | two |');assert(html.includes('<h1'));assert(html.includes('<table>'));assert(html.includes('id="scope"'));assert(!html.includes('<script'));assert(!html.includes('href="javascript:'))
 })
+
+test('routed public read revokes a disabled target while awaiting authoritative source',async t=>{
+ const {m,entry,source}=await setup(t);let resolve;source.read=()=>new Promise(r=>resolve=r)
+ m.registerAdapter({id:'route',authority:'fixture',list:()=>[],read:()=>null,validateResourceRoute:({id,sourceAdapterId})=>({supported:true,id,sourceAdapterId})})
+ const pending=m.read({adapterId:'route',sourceAdapterId:'source',id:entry.id});await new Promise(r=>setImmediate(r));m.setAdapterEnabled({id:'route',enabled:false});resolve({id:entry.id,content:'LATE_BODY',revision:1});await assert.rejects(pending,{code:'SOURCE_UNAVAILABLE'})
+})

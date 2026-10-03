@@ -100,7 +100,20 @@ export class MemoryManager {
     const filteredRows=rows.filter(r=>matches(states,r.status)&&matchesConfigurationFilters(r,filters))
     return {protocolVersion:1,revision:this.configuration.document.revision,configError:this.configuration.error,rows:filteredRows,diagnostics,catalogs,facets,scope:scope.sessionId?{sessionId:scope.sessionId}:{global:true},adapters:[...this.adapters.values()].map(a=>({id:a.id,name:a.name,authority:a.authority}))}
   }
-  async read({adapterId,id,sourceAdapterId,scope={},signal}) {if(sourceAdapterId&&sourceAdapterId!==adapterId){const target=this.adapters.get(adapterId);if(!target||!this.isAdapterEnabled(adapterId)||target.strategyOwner==='source'||typeof target.validateResourceRoute!=='function')fail('ROUTE_UNSUPPORTED','所选 adapter 没有声明此资源路由能力。');const route=await this.invoke(target,'validateResourceRoute',{id,sourceAdapterId,scope,signal});if(route?.supported!==true||route.id!==id||route.sourceAdapterId!==sourceAdapterId)fail('ROUTE_UNSUPPORTED','adapter 未确认实际资源身份与路由。');adapterId=sourceAdapterId}const a=this.adapters.get(adapterId);if(!a)fail('SOURCE_UNAVAILABLE','Source is unavailable');const result=await this.invoke(a,'read',{id,scope,signal});if(result)this.claim(a,result,id);else {const reservation=this.reservations.get(id);if(reservation?.adapter===a&&!reservation.tokens.size)this.reservations.delete(id)}return clone(result)}
+  async read({adapterId,id,sourceAdapterId,scope={},signal}) {
+    let checkRoute=()=>{}
+    if(sourceAdapterId&&sourceAdapterId!==adapterId){
+      const target=this.adapters.get(adapterId),lifetime=this.lifetimes.get(target),catalogGeneration=this.catalogGeneration
+      if(!target||!this.isAdapterEnabled(adapterId)||target.strategyOwner==='source'||typeof target.validateResourceRoute!=='function')fail('ROUTE_UNSUPPORTED','所选 adapter 没有声明此资源路由能力。')
+      checkRoute=()=>{if(this.adapters.get(target.id)!==target||this.lifetimes.get(target)!==lifetime||lifetime?.signal.aborted||!this.isAdapterEnabled(target.id)||this.catalogGeneration!==catalogGeneration)fail('SOURCE_UNAVAILABLE','规则路由在读取期间已变化、卸载或停用。')}
+      const route=await this.invoke(target,'validateResourceRoute',{id,sourceAdapterId,scope,signal})
+      if(route?.supported!==true||route.id!==id||route.sourceAdapterId!==sourceAdapterId)fail('ROUTE_UNSUPPORTED','adapter 未确认实际资源身份与路由。')
+      checkRoute();signal=signal?AbortSignal.any([signal,lifetime.signal]):lifetime.signal;adapterId=sourceAdapterId
+    }
+    const a=this.adapters.get(adapterId);if(!a)fail('SOURCE_UNAVAILABLE','Source is unavailable')
+    const result=await this.invoke(a,'read',{id,scope,signal});checkRoute()
+    if(result)this.claim(a,result,id);else {const reservation=this.reservations.get(id);if(reservation?.adapter===a&&!reservation.tokens.size)this.reservations.delete(id)}return clone(result)
+  }
   async update({adapterId,id,scope={},content,expectedRevision,operationId,signal}) {
     const a=this.adapters.get(adapterId);if(!a?.update)fail('READ_ONLY','Source does not support editing')
     if(expectedRevision===undefined||typeof operationId!=='string'||!operationId)fail('INVALID_UPDATE','Revision and operationId are required')
