@@ -61,8 +61,9 @@ export function validateDocument(doc) {
 export function effective(doc,id) {
   const local=doc.entries.find(e=>e.id===id)
   if (!local) return {config:null,origins:{},revision:doc.revision}
-  const config={whitelist:[],blacklist:[],preset:null,...clone(local)},origins={}
-  for (const k of Object.keys(config)) origins[k]='local'
+  const config={whitelist:[],blacklist:[],preset:null,...clone(local)},origins={whitelist:'default',blacklist:'default',preset:'default'}
+  for (const k of Object.keys(local)) origins[k]='local'
+  for (const mode of ['store','retrieve'])for(const key of Object.keys(local[mode]??{}))origins[`${mode}.${key}`]='local'
   const preset=local.preset==null?null:doc.presets[local.preset]
   for (const [k,v] of Object.entries(preset??{})) {
     if (['store','retrieve'].includes(k)) { config[k]={...config[k],...clone(v)}; for(const child of Object.keys(v)) origins[`${k}.${child}`]=`preset:${local.preset}` }

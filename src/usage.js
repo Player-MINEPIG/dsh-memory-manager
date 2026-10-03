@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto'
 import { applies,clone,fail } from './config.js'
 export class Usage {
   conditions=new Map();operations=new Map();running=new Set()
-  constructor(manager){this.manager=manager}
+  constructor(manager){this.manager=manager;manager.usage=this}
   registerCondition({id,test}){if(typeof test!=='function')fail('INVALID_CONDITION',id);const registration=(...args)=>test(...args);return this.register(this.conditions,id,registration)}
   registerOperation({id,run,readOnly=false,version=1}){if(typeof run!=='function')fail('INVALID_OPERATION',id);return this.register(this.operations,id,{run,readOnly,version})}
   register(map,id,value){if(!id||map.has(id))fail('DUPLICATE_REGISTRATION',`Duplicate registration: ${id}`);map.set(id,value);return()=>{if(map.get(id)===value)map.delete(id)}}

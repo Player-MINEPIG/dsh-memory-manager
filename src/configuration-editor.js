@@ -1,0 +1,89 @@
+import {readFile,open,unlink} from 'node:fs/promises'
+import {readFileSync,renameSync} from 'node:fs'
+import {randomUUID} from 'node:crypto'
+import {isDeepStrictEqual} from 'node:util'
+import {clone,effective,fail,validateDocument} from './config.js'
+
+function identity({id,adapterId,entry}){
+ if(typeof id!=='string'||!id||typeof adapterId!=='string'||!adapterId)fail('INVALID_CONFIG','资源 ID 和提供方不能为空。')
+ if(entry&&(entry.id!==id||entry.adapterId!==adapterId))fail('IDENTITY_CONFLICT','不能通过管理配置修改资源 ID 或提供方；独立内容请复制为新 ID。')
+}
+export function configurationSnapshot(manager,{id,adapterId}){
+ identity({id,adapterId})
+ const doc=manager.configuration.document,local=doc.entries.find(e=>e.id===id)??null
+ if(local&&local.adapterId!==adapterId)fail('OWNERSHIP_CONFLICT','该资源已绑定其他提供方。')
+ return {id,adapterId,revision:doc.revision,local:clone(local),...effective(doc,id),presets:clone(doc.presets),configError:manager.configuration.error,sourceAvailable:manager.adapters.has(adapterId)}
+}
+function proposedDocument(manager,{id,adapterId,entry,expectedRevision}){
+ identity({id,adapterId,entry})
+ const doc=manager.configuration.document
+ if(!manager.configuration.loaded)fail('CONFIG_UNAVAILABLE','尚未成功读取管理配置文件，请先修复文件并重新读取。')
+ if(!Number.isInteger(expectedRevision)||expectedRevision!==doc.revision)fail('REVISION_CONFLICT',`配置已变化：编辑版本 ${expectedRevision??'未提供'}，当前版本 ${doc.revision}。请重新载入后合并修改。`)
+ if(!entry||typeof entry!=='object'||Array.isArray(entry))fail('INVALID_CONFIG','本地配置必须是 JSON 对象。')
+ const existing=doc.entries.find(e=>e.id===id)
+ if(existing&&existing.adapterId!==adapterId)fail('OWNERSHIP_CONFLICT','该资源已绑定其他提供方。')
+ const entries=existing?doc.entries.map(e=>e.id===id?clone(entry):e):[...doc.entries,clone(entry)]
+ return validateDocument({...clone(doc),entries})
+}
+function conditionNames(rule){
+ if(typeof rule==='string')return [rule]
+ if(!rule||typeof rule!=='object')return []
+ if(rule.condition)return [rule.condition.id]
+ if(rule.not!==undefined)return conditionNames(rule.not)
+ return (rule.all??rule.any??rule.at_least?.conditions??[]).flatMap(conditionNames)
+}
+async function inspect(manager,args,{duringSave=false}={}){
+ const doc=manager.configuration.document,epoch=manager.configuration.pending,diagnostics=[]
+ const add=(level,code,field,message)=>diagnostics.push({level,code,field,message})
+ let next
+ try{next=proposedDocument(manager,args)}catch(e){return {report:{valid:false,revision:doc.revision,diagnostics:[{level:'error',code:e.code??'INVALID_CONFIG',field:'configuration',message:e.message}]},checkCurrent:()=>false}}
+ const composed=effective(next,args.id),adapter=manager.adapters.get(args.adapterId),lifetime=manager.lifetimes.get(adapter),usage=manager.usage
+ const conditions=new Map(usage?.conditions??[]),operations=new Map(usage?.operations??[])
+ const owns=()=>{try{manager.assertOwner(adapter,args.id);return true}catch{return false}}
+ const checkCurrent=()=>owns()&&manager.configuration.document===doc&&(duringSave||manager.configuration.pending===epoch)&&manager.adapters.get(args.adapterId)===adapter&&manager.lifetimes.get(adapter)===lifetime&&!lifetime?.signal.aborted&&conditions.size===(usage?.conditions.size??0)&&[...conditions].every(([k,v])=>usage.conditions.get(k)===v)&&operations.size===(usage?.operations.size??0)&&[...operations].every(([k,v])=>usage.operations.get(k)===v)
+ if(!adapter)add('error','SOURCE_UNAVAILABLE','adapterId','提供方当前未注册，无法判定组合是否受支持；配置未保存。')
+ else if(typeof adapter.validateConfig!=='function')add('error','VALIDATION_UNAVAILABLE','adapterId','提供方没有只读配置校验接口，可行性不可判定；配置未保存。')
+ else try{manager.assertOwner(adapter,args.id);await adapter.validateConfig(clone(composed.config));add('info','SOURCE_VALIDATED','adapterId','提供方配置校验通过。')}catch(e){add('error',e.code??'SOURCE_VALIDATION_FAILED','configuration',`提供方拒绝此配置：${e.message}`)}
+ for(const mode of ['store','retrieve']){
+  const behavior=composed.config[mode]
+  if(!behavior)continue
+  for(const name of new Set(conditionNames(behavior.rule)))if(!conditions.has(name))add('error','CONDITION_UNREGISTERED',`${mode}.rule`,`条件尚未注册：${name}`)
+  if(adapter?.strategyOwner!=='source')for(const step of typeof behavior.strategy==='string'?[{operation:behavior.strategy}]:behavior.strategy??[])if(!operations.has(step.operation))add('error','OPERATION_UNREGISTERED',`${mode}.strategy`,`操作尚未注册：${step.operation}`)
+  if(behavior.on!==undefined)add('unknown','EVENT_CONTEXT_UNCHECKED',`${mode}.on`,'已检查配置格式；此校验不触发事件，实际事件可达性和所需上下文须运行时确认。')
+ }
+ if(!composed.config.whitelist.length)add('info','EMPTY_WHITELIST','whitelist','白名单为空，当前配置不会在任何范围生效。')
+ add('unknown','RUNTIME_AUTHORIZATION_UNCHECKED','resource','未读取或修改资源，也未运行条件或操作。资源存在性、内容兼容性及当前权限由来源在实际执行时检查；校验通过不授予权限或接管原生行为。')
+ if(!checkCurrent())add('error','VALIDATION_STALE','configuration','校验期间配置、提供方或能力注册发生变化，请重新校验。')
+ return {report:{valid:!diagnostics.some(d=>d.level==='error'),revision:doc.revision,local:clone(args.entry),effective:composed.config,origins:composed.origins,diagnostics},next,checkCurrent}
+}
+export async function validateEntry(manager,args){return (await inspect(manager,args)).report}
+
+export function saveEntry(manager,args){
+ // Share the reload queue/epoch. Merely starting a save revokes older runtime
+ // leases, but dry-run inspection does not touch this queue.
+ const configuration=manager.configuration
+ const job=configuration.pending.catch(()=>{}).then(async()=>{
+  const {report,next,checkCurrent}=await inspect(manager,args,{duringSave:true})
+  if(!report.valid)throw Object.assign(new Error('配置校验未通过；未保存。'),{code:report.diagnostics.some(d=>d.code==='REVISION_CONFLICT')?'REVISION_CONFLICT':'VALIDATION_FAILED',diagnostics:report.diagnostics})
+  const current=configuration.document
+  const assertDisk=text=>{let disk;try{disk=validateDocument(JSON.parse(text))}catch{fail('REVISION_CONFLICT','磁盘配置无法校验，可能已被外部修改。请先修复并重新读取；没有覆盖文件。')}if(!isDeepStrictEqual(disk,current))fail('REVISION_CONFLICT','磁盘配置已被外部修改。请先重新读取并合并修改；没有覆盖文件。')}
+  assertDisk(await readFile(configuration.path,'utf8'))
+  if(!checkCurrent())fail('VALIDATION_STALE','校验期间配置或来源能力变化；未保存。')
+  if(isDeepStrictEqual(next,current)){configuration.error=null;return {...configurationSnapshot(manager,args),unchanged:true,validation:report}}
+  next.revision=current.revision+1
+  if(!Number.isSafeInteger(next.revision))fail('REVISION_CONFLICT','配置版本已超出可安全递增的范围。')
+  const temp=configuration.path+'.tmp-'+randomUUID()
+  let file
+  try{
+   file=await open(temp,'wx',0o600);await file.writeFile(JSON.stringify(next,null,2)+'\n');await file.sync();await file.close();file=null
+   // No JS yield between final disk/generation check and atomic publication.
+   assertDisk(readFileSync(configuration.path,'utf8'))
+   if(!checkCurrent())fail('VALIDATION_STALE','保存前配置或来源能力变化；未保存。')
+   renameSync(temp,configuration.path)
+   configuration.document=next;configuration.loaded=true;configuration.error=null
+   return {...configurationSnapshot(manager,args),unchanged:false,validation:report}
+  }finally{await file?.close();await unlink(temp).catch(e=>{if(e.code!=='ENOENT')throw e})}
+ })
+ configuration.pending=job
+ return job
+}

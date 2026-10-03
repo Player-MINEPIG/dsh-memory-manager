@@ -9,3 +9,12 @@ test('HTTP handler fails closed without Host admission and preserves its rejecti
  for(const connection of [undefined,{admit:()=>({rejection:401})},{admit:()=>({rejection:403})}]){const res={statusCode:200,setHeader(){},end(){}};await handler(manager,connection)(req,res);assert.equal(res.statusCode,connection?.admit().rejection??403)}
  assert.equal(calls,0)
 })
+
+test('configuration editor routes retain Host mutation fences and diagnostic conflict status',async()=>{
+ let writes=0;const manager={configurationSnapshot:args=>({...args,revision:3,local:null}),validateEntry:async()=>({valid:true,diagnostics:[]}),saveEntry:async()=>{writes++;throw Object.assign(Error('stale edit'),{code:'REVISION_CONFLICT',diagnostics:[{level:'error',code:'REVISION_CONFLICT',field:'configuration',message:'stale edit'}]})}}
+ const snapshot=await call(manager,{method:'GET',url:'/api/dsh-memory-manager/configuration?id=a%3A1&adapterId=a'});assert.equal(snapshot.body.id,'a:1');assert.equal(snapshot.body.local,null)
+ for(const path of ['validate-configuration','save-configuration'])assert.equal((await call(manager,{url:'/api/dsh-memory-manager/'+path})).statusCode,403)
+ assert.equal(writes,0)
+ const response=await call(manager,{url:'/api/dsh-memory-manager/save-configuration',headers:{origin:'http://localhost:1','content-type':'application/json','x-dsh-memory-manager':'1'},body:{expectedRevision:2}})
+ assert.equal(response.statusCode,409);assert.equal(response.body.error.diagnostics[0].code,'REVISION_CONFLICT');assert.equal(writes,1)
+})

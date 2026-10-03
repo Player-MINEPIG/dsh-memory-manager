@@ -1,6 +1,8 @@
 import { mkdir,readFile,writeFile,rename } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { Configuration,clone,fail,effective,applies,safe } from './config.js'
+import {configurationFilterFields,filterValues,validateFilters,matchesConfigurationFilters} from './filters.js'
+import {configurationSnapshot,validateEntry,saveEntry} from './configuration-editor.js'
 export class MemoryManager {
   protocolVersion=1
   adapters=new Map(); lifetimes=new Map(); owners=new Map(); reservations=new Map(); traces=[]; active=new Map(); diagnostics=[]; pending=Promise.resolve()
@@ -60,7 +62,11 @@ export class MemoryManager {
       this.pending=this.pending.catch(()=>{}).then(async()=>{await mkdir(dirname(this.journalPath),{recursive:true});const temp=`${this.journalPath}.tmp`;await writeFile(temp,data,{mode:0o600});await rename(temp,this.journalPath)}).catch(e=>{this.diagnostics.push({code:'JOURNAL_WRITE_FAILED',message:e.message})})
     }
   }
-  async query({scope={},turn,turnKind,status,adapterId,signal}={}) {
+  configurationSnapshot(args) {return configurationSnapshot(this,args)}
+  validateEntry(args) {return validateEntry(this,args)}
+  saveEntry(args) {return saveEntry(this,args)}
+  async query({scope={},turn,turnKind,status,adapterId,filters={},signal}={}) {
+    validateFilters(filters)
     const selected=value=>(Array.isArray(value)?value:[value]).filter(v=>v!==undefined&&v!==null&&v!=='').map(String)
     const matches=(values,value)=>!values.length||values.includes(String(value))
     const turns=selected(turn),kinds=selected(turnKind),states=selected(status),sources=selected(adapterId)
@@ -79,8 +85,10 @@ export class MemoryManager {
       const policy=this.getConfig(r.id),facts=[...this.traces,...(r.facts??[])].filter(t=>t.id===r.id&&t.adapterId===r.adapterId&&filter(t)),running=[...this.active.values()].some(t=>t.id===r.id&&filter(t))
       const state=running?'running':facts.some(t=>['triggered','applied','started'].includes(t.phase))?'past':'never'
       return {...r,config:policy.config,origins:policy.origins,configRevision:policy.revision,managed:r.managementMode==='managed',applicable:applies(policy.config,scope),status:state,facts,interrupted:facts.some(t=>t.interrupted),applied:facts.some(t=>t.phase==='applied')}
-    }).filter(r=>matches(states,r.status))
-    return {protocolVersion:1,revision:this.configuration.document.revision,configError:this.configuration.error,rows,diagnostics,catalogs,facets,scope:scope.sessionId?{sessionId:scope.sessionId}:{global:true},adapters:[...this.adapters.values()].map(a=>({id:a.id,name:a.name,authority:a.authority}))}
+    })
+    facets.fields=Object.fromEntries(configurationFilterFields.map(field=>[field,[...new Set(rows.flatMap(r=>filterValues(r,field)))].sort()]))
+    const filteredRows=rows.filter(r=>matches(states,r.status)&&matchesConfigurationFilters(r,filters))
+    return {protocolVersion:1,revision:this.configuration.document.revision,configError:this.configuration.error,rows:filteredRows,diagnostics,catalogs,facets,scope:scope.sessionId?{sessionId:scope.sessionId}:{global:true},adapters:[...this.adapters.values()].map(a=>({id:a.id,name:a.name,authority:a.authority}))}
   }
   async read({adapterId,id,scope={},signal}) {const a=this.adapters.get(adapterId);if(!a)fail('SOURCE_UNAVAILABLE','Source is unavailable');const result=await this.invoke(a,'read',{id,scope,signal});if(result)this.claim(a,result,id);else {const reservation=this.reservations.get(id);if(reservation?.adapter===a&&!reservation.tokens.size)this.reservations.delete(id)}return clone(result)}
   async update({adapterId,id,scope={},content,expectedRevision,operationId,signal}) {
