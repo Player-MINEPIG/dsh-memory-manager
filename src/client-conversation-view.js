@@ -1,6 +1,15 @@
-import {createElement as h} from 'react'
+import {createElement as h,useLayoutEffect,useRef} from 'react'
 export function createConversationView(Panel){
- return function MemoryConversationView({sessionId}){return h('div',{className:'dmm-conversation-view'},h(Panel,{sessionId,sessionView:true}))}
+ return function MemoryConversationView({sessionId}){
+  const root=useRef(null)
+  useLayoutEffect(()=>{
+   const content=root.current?.closest('[data-conversation-content]')
+   if(!content)return
+   content.classList.add('dmm-memory-content')
+   return()=>content.classList.remove('dmm-memory-content')
+  },[])
+  return h('div',{ref:root,className:'dmm-conversation-view'},h(Panel,{sessionId,sessionView:true}))
+ }
 }
 export function registerConversationView(ctx,View){
  return ctx.slots.inject('conversation.view',()=>{
