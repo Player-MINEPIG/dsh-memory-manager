@@ -42,7 +42,7 @@ test('actual DSH request contains managed resource and version evidence; unload 
   await saveSkill('NATIVE_SKILL_BODY_ONE')
   const skillPlugin=ctx.plugin((await load('@deepseek-ai/dsh-skill')).default,{});await skillPlugin
   const filesPlugin=ctx.plugin(await load('@deepseek-ai/dsh-skill-filesystem'),{providerName:'acceptance-files',includeDefaultRoots:false,customSkillDirs:[skillRoot],watch:false});await filesPlugin
-  const rows=await ctx.dshMemoryManager.query({scope:{sessionId:agent.id}})
+  const rows=await ctx.dshMemoryManager.query()
   const skill=rows.rows.find(r=>r.name==='request-proof');assert(skill)
   const doc=structuredClone(ctx.dshMemoryManager.configuration.document);doc.revision=2;doc.entries.push({id:skill.id,adapterId:'dsh.skills',type:'skill',whitelist:[{global:true}],blacklist:[],retrieve:{on:'before_model_request',rule:true,strategy:[{operation:'memory.read_content'},{operation:'memory.to_text'}]}})
   await writeFile(configPath,JSON.stringify(doc));await ctx.dshMemoryManager.reload()

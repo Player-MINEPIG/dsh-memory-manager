@@ -30,12 +30,12 @@ test('controlled entry forms round-trip local-only config and reject lossy impor
  const extended={...entry,extra:{keep:true},retrieve:{...entry.retrieve,extra:true}};assert.deepEqual(entryFrom(importEntry(JSON.stringify(extended),row),row),extended)
  const form=formFrom(entry);form['retrieve.rule']='';assert.deepEqual(entryFrom(form,row).retrieve,{on:[],strategy:[]})
 })
-test('trace-only indeterminate type is missing, while real and configured unknown types remain exact facets',async()=>{
+test('global trace-only indeterminate type is missing, while real and configured unknown types remain exact facets',async()=>{
  const {MemoryManager}=await import('../src/manager.js'),m=new MemoryManager({configPath:'/unused'})
  let records=[{id:'real',type:'unknown'}]
  m.registerAdapter({id:'a',authority:'synthetic',list:async()=>records,read:async()=>null})
  m.recordTrace({adapterId:'a',id:'gone',eventId:'past',phase:'applied',sessionId:'s'})
- const scope={sessionId:'s'},query=await m.query({scope}),gone=query.rows.find(r=>r.id==='gone')
+ const scope={},query=await m.query({scope}),gone=query.rows.find(r=>r.id==='gone')
  assert.deepEqual(filterValues(gone,'type'),[])
  assert.deepEqual((await m.query({scope,filters:{type:f([],'exact',true)}})).rows.map(r=>r.id),['gone'])
  assert.deepEqual((await m.query({scope,filters:{type:f(['unknown'])}})).rows.map(r=>r.id),['real'])

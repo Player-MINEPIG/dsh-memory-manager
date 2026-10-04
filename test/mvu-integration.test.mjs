@@ -1,3 +1,4 @@
+// Fixed-ID fixtures deliberately test shared-state policy/CAS; production defaults remain session instances.
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {createHash} from 'node:crypto'
@@ -24,7 +25,7 @@ async function setupManager(t,service){
 
 test('frozen real MVU adapter shares current identity across scopes and preserves CAS/copy ownership',{skip:!root},async t=>{
  const {MvuService}=await loadSource(),dir=await mkdtemp(join(tmpdir(),'source-mvu-'));t.after(()=>rm(dir,{recursive:true,force:true}))
- const service=new MvuService({storageDir:dir,resources:[{id:'mvu:shared',sessionIds:['s','t'],initial:{stat_data:{hp:10}}}]})
+ const service=new MvuService({storageDir:dir,resources:[{id:'mvu:shared',sharing:'shared',sessionIds:['s','t'],initial:{stat_data:{hp:10}}}]})
  const {manager:m}=await setupManager(t,service),request={adapterId,id:'mvu:shared'},a=await m.read({...request,scope:{sessionId:'s'}}),b=await m.read({...request,scope:{sessionId:'t'}})
  assert.deepEqual(a.content,b.content);assert.equal(a.revision,b.revision)
  const first=await m.update({...request,scope:{sessionId:'s'},content:{...a.content,stat_data:{hp:8}},expectedRevision:a.revision,operationId:'edit'})
@@ -46,7 +47,7 @@ async function cardFixture(t){
  const scope={playthroughId:'p',sessionId:'s',nodeId:'n',variantId:'v',endEventId:1,sessionFormatVersion:4},text="_.add('hp',-1);",fingerprint=createHash('sha256').update(JSON.stringify(text)).digest('hex'),sourceIdentity={version:1,sha256:'a'.repeat(64),scope}
  let granted=false,active=true
  const events=[{seq:0,type:'turn/start',data:{turn:1}},{seq:1,type:'assistant/message',data:{turn:1,message:{id:'reply',content:[{type:'text',text}]}}},{seq:2,type:'turn/end',data:{turn:1,reason:{kind:'completed'}}}]
- const service=new MvuService({storageDir:dir,resources:[{id:'mvu:card',sessionIds:['s'],initial:{stat_data:{hp:10}},schemaSource:'const Schema=z.object({hp:z.number().min(0)});'}],resolveScope:async input=>{assert.deepEqual(input,scope);return {writableHead:active,messageId:'reply',fingerprint}},authorizeCardWrite:async ({grantId,sourceIdentity:identity})=>granted&&grantId==='grant'&&JSON.stringify(identity)===JSON.stringify(sourceIdentity)?{valid:true,write:true,scope,checkCurrent:()=>granted}:null})
+ const service=new MvuService({storageDir:dir,resources:[{id:'mvu:card',sharing:'shared',sessionIds:['s'],initial:{stat_data:{hp:10}},schemaSource:'const Schema=z.object({hp:z.number().min(0)});'}],resolveScope:async input=>{assert.deepEqual(input,scope);return {writableHead:active,messageId:'reply',fingerprint}},authorizeCardWrite:async ({grantId,sourceIdentity:identity})=>granted&&grantId==='grant'&&JSON.stringify(identity)===JSON.stringify(sourceIdentity)?{valid:true,write:true,scope,checkCurrent:()=>granted}:null})
  await service.ingest({id:'s',header:{id:'s',version:4},inheritedEventCount:0,snapshotEvents:()=>events});service.inspect=async()=>({header:{id:'s',version:4},events})
  const state=await setupManager(t,service)
  await state.manager.setManagementMode({adapterId,id:'mvu:card',mode:'managed',scope:{sessionId:'s'},expectedRevision:1,operationId:'manage'})
@@ -98,7 +99,7 @@ test('real DSH request and durable MVU reply pass through actual manager usage a
   ctx.on('agent/error',e=>errors.push(e.error))
   class Provider extends llm.LlmAdapter{async resolveModel(provider,id){return {provider,id,name:id,systemPromptUpdate:'in-history'}}async *stream(request){requests.push(structuredClone(request.messages));const text="_.add('hp', -5);";yield{type:'block-start',index:0,blockType:'text'};yield{type:'text-delta',index:0,text};yield{type:'block-end',index:0,block:{type:'text',text}};yield{type:'finish',reason:{kind:'stop'}}}}
   ctx.llm.registerAdapter(['test'],new Provider())
-  await ctx.plugin({name:tavern.name,inject:tavern.inject,apply(c){store=tavern.apply(c,{storageDir:join(dir,'tavern'),mvu:{resources:[{id:'mvu:host',sessionIds:['*'],managementMode:'managed',initial:{stat_data:{hp:100}}}]}})}})
+  await ctx.plugin({name:tavern.name,inject:tavern.inject,apply(c){store=tavern.apply(c,{storageDir:join(dir,'tavern'),mvu:{resources:[{id:'mvu:host',sharing:'shared',sessionIds:['*'],managementMode:'managed',initial:{stat_data:{hp:100}}}]}})}})
   const entry={id:'mvu:host',adapterId,type:'mvu-state',whitelist:[{sessionId:'mvu-host'}],blacklist:[],store:{on:'assistant_message_committed',rule:'contains_mvu_update',strategy:[{operation:'parse_mvu_update'},{operation:'validate_update'},{operation:'apply_update'}]},retrieve:{on:'before_model_request',rule:true,strategy:[{operation:'read_content'},{operation:'render_state_and_update_instructions'},{operation:'provide_to_model'}]}}
   await writeFile(join(dir,'config.json'),JSON.stringify({schemaVersion:1,revision:1,entries:[entry],presets:{}}));const managerPlugin=ctx.plugin(plugin,{storageDir:dir});await managerPlugin
   const {agent}=await ctx.agents.create({sessionId:'mvu-host',agentOptions:{provider:'test',model:'test'}}),service=ctx.tavernMvu,m=ctx.dshMemoryManager
@@ -164,7 +165,7 @@ test('actual MVU initial Host binding retains manager policy, shared state and f
  const scope={mode:'initial',playthroughId:'p',sessionId:'s',characterId:'c',sessionFormatVersion:4},sourceIdentity={version:1,sha256:'b'.repeat(64),scope}
  let events=[{type:'permission/preset',seq:0,data:{preset:'workspace-write'}},{type:'sandbox/mode',seq:1,data:{mode:'workspace-write'}},{type:'approval/policy',seq:2,data:{policy:'ask'}},{type:'sandbox/mode',seq:3,data:{mode:'read-only'}}];const session={id:'s',header:{id:'s',version:4,createdAt:'initial-test'},snapshotEvents:()=>events},handlers=new Map(),services=new Map([['sessions',new Map([['s',session]])],['tavernRenderingAuthority',{resolve:async()=>({valid:true,write:true,scope}),isCurrent:()=>true}]])
  const ctx={get:n=>services.get(n),provide:(n,s)=>services.set(n,s),on:(n,h)=>handlers.set(n,h),effect:f=>f()}
- const service=installSource(ctx,{storageDir:dir,resources:[{id:'mvu:initial',characterId:'c',sessionIds:['s','other'],managementMode:'managed',initial:{stat_data:{hp:10}}}],sources:{register:()=>()=>{}},memberships,getSelection:id=>selections.get(id),getSelectionToken:id=>selections.selectionRevision(id),isActive:(resource,id)=>resource.characterId===selections.get(id).characterCardId})
+ const service=installSource(ctx,{storageDir:dir,resources:[{id:'mvu:initial',sharing:'shared',characterId:'c',sessionIds:['s','other'],managementMode:'managed',initial:{stat_data:{hp:10}}}],sources:{register:()=>()=>{}},memberships,getSelection:id=>selections.get(id),getSelectionToken:id=>selections.selectionRevision(id),isActive:(resource,id)=>resource.characterId===selections.get(id).characterCardId})
  const f=await setupManager(t,service),policy={id:'mvu:initial',adapterId,type:'mvu-state',whitelist:[{sessionId:'s'}],blacklist:[],store:{on:'card_variable_update',rule:{condition:{id:'mvu_card_write_cause',params:{cause:'user-interaction'}}},strategy:cardStrategy}}
  let observedScope;f.usage.registerCondition({id:'initial-scope',test:e=>{observedScope=e.scope;return e.scope.mode==='initial'}});policy.store.rule={all:[policy.store.rule,'initial-scope']};await f.configure([policy])
  const {capability}=await service.createCardBinding({scope,grantId:'synthetic',sourceIdentity}),request={capability,operation:'replace',value:{stat_data:{hp:7}},expectedRevision:0,operationId:'initial-write',cause:'user-interaction'}

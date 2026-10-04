@@ -29,9 +29,9 @@ test('re-registering the same adapter object rejects its previous observer gener
 })
 
 import {tavernWorldBooks} from '../src/adapters/tavern.js'
-test('world books include automatic and historical resources; only trace decisions mark triggering',async()=>{
- const values={'/world-book-selection':{worldBooks:[]},'/active':{resources:{worldBooks:[{id:'automatic',name:'Bound book'}]}},'/traces':{records:[{id:'trace',worldBooks:[{resource:{id:'historical'},decisions:[{decision:'included'}]}]}]}}
- const a=tavernWorldBooks({baseUrl:'http://127.0.0.1',fetchImpl:async url=>({ok:true,json:async()=>({ok:true,...values[url.pathname.slice('/pmp-dsh-tavern/api/v1'.length)]})})})
+test('legacy worldbook bridge cannot confirm current binding and never scans its global/history HTTP catalogs',async()=>{
+ let calls=0
+ const a=tavernWorldBooks({baseUrl:'http://127.0.0.1',fetchImpl:async()=>{calls++;throw Error('no global/history/body lookup')}})
  const m=manager();m.registerAdapter(a);const q=await m.query({scope:{sessionId:'s'}})
- assert.equal(q.diagnostics.length,0);assert.equal(q.rows.find(r=>r.id==='world-book:automatic').status,'never');const historical=q.rows.find(r=>r.id==='world-book:historical');assert.equal(historical.status,'past');assert.equal(historical.applied,false)
+ assert.deepEqual(q.rows,[]);assert.equal(q.catalogs[0].binding,'unconfirmed');assert.equal(q.diagnostics[0].code,'SESSION_BINDINGS_UNAVAILABLE');assert.equal(calls,0)
 })

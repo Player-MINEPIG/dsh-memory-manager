@@ -34,6 +34,8 @@ export function installManagedSources(manager,service,usage){
    })
    disposers.push(()=>{disposed=true;unuse()})
   }
+  manager.boundMemorySource=service
+  disposers.push(()=>{if(manager.boundMemorySource===service)manager.boundMemorySource=undefined})
  }catch(error){for(const stop of disposers.reverse())stop();throw error}
  return ()=>{for(const stop of disposers.reverse())stop()}
 }

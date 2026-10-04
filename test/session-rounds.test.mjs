@@ -6,7 +6,7 @@ import {sessionRounds,roundRows,roundKinds,roundVisibleCount} from '../src/sessi
 test('round states come from scoped active facts, never an aggregate status from another turn or old unmatched start',async t=>{
  const manager=new MemoryManager({configPath:'/unused'});t.after(()=>manager.dispose())
  let reads=0,lists=0
- const stop=manager.registerAdapter({id:'own',authority:'self-authored',list:()=>{lists++;return ['a','b','c'].map(id=>({id,type:'text',name:id,opaque:'retained'}))},read:()=>{reads++;throw Error('no resource body reads')}});t.after(stop)
+ const stop=manager.registerAdapter({id:'own',authority:'self-authored',list:()=>{lists++;return ['a','b','c'].map(id=>({id,type:'text',name:id,opaque:'retained'}))},listBound:({scope})=>{lists++;return {revision:'self',items:['a','b','c'].map(id=>({id,adapterId:'own',type:'text',name:id,binding:{sessionId:scope.sessionId,kind:'self-authored'}})),checkCurrent:()=>true}},read:()=>{reads++;throw Error('no resource body reads')}});t.after(stop)
  const fact=(id,eventId,turn,phase,turnKind='human',sessionId='self-session')=>manager.recordTrace({adapterId:'own',id,eventId,requestId:eventId,turn,phase,turnKind,sessionId})
  fact('a','done',1,'started');fact('a','done',1,'applied')
  fact('b','running',2,'started','task')
@@ -28,7 +28,7 @@ test('round states come from scoped active facts, never an aggregate status from
  assert.equal(roundKinds(two),'任务上下文');assert.equal(roundRows(data,null).find(r=>r.id==='c').status,'never')
  assert(data.rows.every(r=>r.facts.every(f=>f.sessionId==='self-session')))
  assert(data.rows.every(r=>r.activeFacts.every(f=>f.sessionId==='self-session')))
- assert.equal(two[0].opaque,'retained');assert.equal(reads,0);assert.equal(lists,1)
+ assert.equal(two[0].name,'a');assert.equal(reads,0);assert.equal(lists,1)
  const active=data.rows.find(r=>r.id==='b').activeFacts[0];active.turn=99
  assert.equal([...manager.active.values()].find(f=>f.eventId==='running').turn,2)
  fact('b','running',2,'completed','task')

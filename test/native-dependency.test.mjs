@@ -1,3 +1,4 @@
+// Fixed-ID fixtures deliberately test shared-state policy/CAS; production defaults remain session instances.
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {mkdtemp,rm,writeFile} from 'node:fs/promises'
@@ -32,7 +33,7 @@ for(const mode of ['native','managed'])test(`actual MVU dependency service with 
  await writeFile(configPath,JSON.stringify(document()))
  const m=await new MemoryManager({configPath}).init(),u=new Usage(m)
  let scopeCurrent=true
- const service=new MvuService({storageDir:dir,resources:[{id:'mvu:self',sessionIds:['s'],managementMode:mode,initial:{stat_data:{value:42}}}],capturePromptScope:()=>()=>scopeCurrent})
+ const service=new MvuService({storageDir:dir,resources:[{id:'mvu:self',sharing:'shared',sessionIds:['s'],managementMode:mode,initial:{stat_data:{value:42}}}],capturePromptScope:()=>()=>scopeCurrent})
  t.after(()=>service.dispose());const input={id:'mvu:self',scope:{authority:'local',sessionId:'s'},event:request().event}
  const before=await service.resolvePromptDependency(input);assert.equal(!!before,mode==='native')
  const stop=installMvu(m,service,u);t.after(stop)

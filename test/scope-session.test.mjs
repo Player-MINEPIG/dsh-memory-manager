@@ -1,3 +1,4 @@
+// Fixed-ID fixtures deliberately test shared-state policy/CAS; production defaults remain session instances.
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {ScopeDirectory} from '../src/scope-directory.js'
@@ -70,7 +71,7 @@ async function realSource(t){
  const text="_.add('hp',-1);",fingerprint=createHash('sha256').update(JSON.stringify(text)).digest('hex'),scope={playthroughId:'own-play',sessionId,nodeId:'own-node',variantId:'own-variant',endEventId:1,sessionFormatVersion:4},sourceIdentity={version:1,sha256:'a'.repeat(64),scope}
  let grantActive=true
  const events=[{seq:0,type:'turn/start',data:{turn:1}},{seq:1,type:'assistant/message',data:{turn:1,message:{id:'own-reply',content:[{type:'text',text}]}}},{seq:2,type:'turn/end',data:{turn:1,reason:{kind:'completed'}}}]
- const service=new MvuService({storageDir:join(root,'source'),resources:[{id:'mvu:own',sessionIds:[sessionId,otherSession],initial:{stat_data:{hp:10}}}],inspect:async()=>({header:{id:sessionId,version:4},events}),resolveScope:async value=>{assert.deepEqual(value,scope);return {writableHead:true,messageId:'own-reply',fingerprint}},authorizeCardWrite:async ({grantId,sourceIdentity:identity})=>grantActive&&grantId==='own-grant'&&JSON.stringify(identity)===JSON.stringify(sourceIdentity)?{valid:true,write:true,scope,checkCurrent:()=>grantActive}:null})
+ const service=new MvuService({storageDir:join(root,'source'),resources:[{id:'mvu:own',sharing:'shared',sessionIds:[sessionId,otherSession],initial:{stat_data:{hp:10}}}],inspect:async()=>({header:{id:sessionId,version:4},events}),resolveScope:async value=>{assert.deepEqual(value,scope);return {writableHead:true,messageId:'own-reply',fingerprint}},authorizeCardWrite:async ({grantId,sourceIdentity:identity})=>grantActive&&grantId==='own-grant'&&JSON.stringify(identity)===JSON.stringify(sourceIdentity)?{valid:true,write:true,scope,checkCurrent:()=>grantActive}:null})
  await service.ingest({id:sessionId,header:{id:sessionId,version:4},inheritedEventCount:0,snapshotEvents:()=>events})
  const configPath=join(root,'config.json');await writeFile(configPath,JSON.stringify({schemaVersion:1,revision:1,presets:{},entries:[]}))
  const manager=await new MemoryManager({configPath}).init(),usage=new Usage(manager),stop=installMvu(manager,service,usage),p=directories(manager.scopeDirectory)

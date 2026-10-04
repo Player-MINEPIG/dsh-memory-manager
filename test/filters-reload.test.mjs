@@ -34,10 +34,10 @@ test('no-op reload and error recovery never revive an earlier MVU permission lea
 })
 test('multi-select OR within dimensions, AND across dimensions, empty unlimited; session facts and facets stay isolated',async t=>{
  const {m}=await setup(t)
- for(const id of ['a','b','c'])m.registerAdapter({id,authority:'test',list:async()=>[{id:id+':r',type:'text'}],read:async()=>null})
+ for(const id of ['a','b','c'])m.registerAdapter({id,authority:'test',list:async()=>[{id:id+':r',type:'text'}],listBound:({scope})=>({revision:'self',items:[{id:id+':r',adapterId:id,type:'text',binding:{sessionId:scope.sessionId,kind:'self-authored'}}],checkCurrent:()=>true}),read:async()=>null})
  for(const [adapterId,sessionId,turn,turnKind,phase] of [['a','s',1,'human','applied'],['b','s',2,'task','started'],['c','s',3,'system','skipped'],['a','other',9,'system','started']])m.recordTrace({id:adapterId+':r',adapterId,sessionId,turn,turnKind,phase,eventId:adapterId+sessionId})
  const q=await m.query({scope:{sessionId:'s'},adapterId:['a','b'],turn:['1','2'],turnKind:['human','task'],status:['past','running']})
- assert.deepEqual(q.rows.map(r=>r.id),['a:r','b:r']);assert(q.rows.every(r=>r.facts.length===1));assert.deepEqual(q.facets.turns,['1','2','3']);assert.equal(q.scope.sessionId,'s')
+ assert.deepEqual(q.rows.map(r=>r.id),['a:r','b:r']);assert(q.rows.every(r=>r.facts.length===1));assert.deepEqual(q.facets.turns,['1','2']);assert.equal(q.scope.sessionId,'s')
  assert.equal((await m.query({scope:{sessionId:'s'},adapterId:['a','b'],turn:['1','2'],turnKind:['human'],status:['running']})).rows.length,0)
  assert.equal((await m.query({adapterId:[],turn:[],turnKind:[],status:[]})).rows.length,3)
  const other=await m.query({scope:{sessionId:'other'}});assert.deepEqual(other.facets.turns,['9']);assert.equal(other.rows[1].status,'never')
