@@ -24,7 +24,10 @@ export async function sessionCatalog(manager,{scope,adapters,signal}){
   try{
    signal?.throwIfAborted()
    let value,aggregate=false
-   if(typeof source?.listBound==='function'&&(source.adapters.includes(adapter)||adapter.id==='tavern.mvu')){
+   const allSessions=adapter.catalogScope==='all-sessions'
+   if(allSessions){
+    value={items:await manager.invoke(adapter,'list',request),checkCurrent:()=>true}
+   }else if(typeof source?.listBound==='function'&&(source.adapters.includes(adapter)||adapter.id==='tavern.mvu')){
     aggregate=true
     shared??=Promise.resolve().then(()=>source.listBound(request))
     value=await shared
@@ -32,12 +35,12 @@ export async function sessionCatalog(manager,{scope,adapters,signal}){
     if(typeof adapter.listBound!=='function')fail('SESSION_BINDINGS_UNAVAILABLE','来源未确认当前会话的资源绑定；不使用全局目录、白名单或历史记录代替。')
     value=await manager.invoke(adapter,'listBound',request)
    }
-   if(!value||typeof value.revision!=='string'||typeof value.checkCurrent!=='function'||!Array.isArray(value.items))fail('INVALID_SESSION_BINDINGS','来源没有返回当前资源绑定 metadata 和有效 lease。')
-   const checkCurrent=value.checkCurrent,items=metadata(value.items,scope.sessionId,aggregate?undefined:adapter.id).filter(item=>item.adapterId===adapter.id)
+   if(!value||(!allSessions&&typeof value.revision!=='string')||typeof value.checkCurrent!=='function'||!Array.isArray(value.items))fail('INVALID_SESSION_BINDINGS','来源没有返回当前资源绑定 metadata 和有效 lease。')
+   const checkCurrent=value.checkCurrent,items=allSessions?clone(value.items):metadata(value.items,scope.sessionId,aggregate?undefined:adapter.id).filter(item=>item.adapterId===adapter.id)
    const check=()=>{
-    try{return !signal?.aborted&&manager.catalogGeneration===catalogGeneration&&manager.adapters.get(adapter.id)===adapter&&manager.lifetimes.get(adapter)===lifetime&&!lifetime.signal.aborted&&manager.isAdapterEnabled(adapter.id)&&(!aggregate||manager.boundMemorySource===source)&&checkCurrent.call(value)===true}catch{return false}
+    try{return !signal?.aborted&&manager.catalogGeneration===catalogGeneration&&manager.adapters.get(adapter.id)===adapter&&manager.lifetimes.get(adapter)===lifetime&&!lifetime.signal.aborted&&manager.isAdapterEnabled(adapter.id)&&(adapter.catalogScope==='all-sessions')===allSessions&&(!aggregate||manager.boundMemorySource===source)&&checkCurrent.call(value)===true}catch{return false}
    }
-   result.set(adapter.id,{items,check})
+   result.set(adapter.id,{items,check,catalogScope:allSessions?'all-sessions':'bound'})
   }catch(error){result.set(adapter.id,{error})}
  }
  signal?.throwIfAborted()
@@ -45,6 +48,6 @@ export async function sessionCatalog(manager,{scope,adapters,signal}){
   const row=result.get(id)
   if(row.error)throw row.error
   if(!row.check())fail('SESSION_BINDINGS_CHANGED','会话资源绑定在读取期间变化，请重新读取。')
-  return row.items
+  return {items:row.items,catalogScope:row.catalogScope}
  }
 }
