@@ -1,6 +1,6 @@
 import { mkdir,readFile,writeFile,rename } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { Configuration,clone,fail,safe } from './config.js'
+import { Configuration,clone,fail,safe,effective } from './config.js'
 import {configurationFilterFields,filterValues,validateFilters,matchesConfigurationFilters} from './filters.js'
 import {optionCatalog,validateAdapterCatalog} from './option-catalog.js'
 import {configurationSnapshot,validateEntry,saveEntry} from './configuration-editor.js'
@@ -10,6 +10,11 @@ import {sessionCatalog} from './session-catalog.js'
 import {sourceConfiguration,policyApplies} from './source-defaults.js'
 export class MemoryManager {
   scopeDirectory=new ScopeDirectory();disabledAdapters=new Set()
+  requestAssemblyResources() {
+    if (this.configuration.error) return { available: false, entries: [] }
+    const doc = structuredClone(this.configuration.document)
+    return { available: true, entries: doc.entries.filter(entry => entry.adapterId !== 'tavern.mvu' && this.adapters.get(entry.adapterId)?.strategyOwner !== 'source').map(entry => ({ id: entry.id, adapterId: entry.adapterId, configurationSnapshot: effective(doc, entry.id) })) }
+  }
   isAdapterEnabled(id){return this.adapters.has(id)&&!this.disabledAdapters.has(id)}
   adapterCatalog(){return adapterCatalog(this)}
   setAdapterEnabled(args){return setAdapterEnabled(this,args)}

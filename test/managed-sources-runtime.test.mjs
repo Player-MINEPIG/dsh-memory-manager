@@ -7,7 +7,7 @@ import {pathToFileURL} from 'node:url'
 import {MemoryManager} from '../src/manager.js'
 import {Usage} from '../src/usage.js'
 import {installManagedSources} from '../src/adapters/managed-sources.js'
-import {registerRequestSource} from '../src/adapters/request-source.js'
+import {registerRequestSource} from 'dsh-prompt-assembler/adapters/memory-manager'
 const root=process.env.DSH_MEMORY_SOURCES
 
 test('real Tavern source catalog → builtin reference → validation/save → managed template output, CAS and unload', {skip:!root&&'Set DSH_MEMORY_SOURCES to Tavern source protocol 1 checkout'},async t=>{

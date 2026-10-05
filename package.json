@@ -1,8 +1,49 @@
 {
-  "name":"dsh-memory-manager","version":"0.1.0","description":"Unified resource management, configuration and usage evidence for DSH memory sources.","type":"module","main":"src/index.js",
-  "exports":{".":"./src/index.js","./manager":"./src/manager.js","./client":"./dist/client.js","./package.json":"./package.json"},
-  "files":["src","dist","docs","examples","cordis.patch.yml","LICENSE","README.md"],
-  "dsh":{"bundle":{"patch":"./cordis.patch.yml"},"client":{"platform":"web","inject":["@deepseek-ai/dsh-client-ui-renderer","@deepseek-ai/dsh-client-ui-settings","@deepseek-ai/dsh-client-ui-conversation"]}},
-  "scripts":{"test":"node --test","build":"node build.mjs","check":"npm test && npm run build","pack:check":"npm pack --dry-run --cache .npm-cache"},
-  "engines":{"node":">=22"},"devDependencies":{"esbuild":"0.28.2"},"license":"MIT"
+  "name": "dsh-memory-manager",
+  "version": "0.1.0",
+  "description": "Unified resource management, configuration and usage evidence for DSH memory sources.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./manager": "./src/manager.js",
+    "./client": "./dist/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "dist",
+    "docs",
+    "examples",
+    "cordis.patch.yml",
+    "LICENSE",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "node --test",
+    "build": "node build.mjs",
+    "check": "npm test && npm run build",
+    "pack:check": "npm pack --dry-run --cache .npm-cache"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "dsh-prompt-assembler": "file:../dsh-prompt-assembler"
+  },
+  "license": "MIT"
 }

@@ -42,7 +42,7 @@ dsh plugin --profile web add /absolute/path/to/dsh-memory-manager
 | DSH Skills | 目录与正文读取；会话查询使用真实 Agent scope | 优先会话 preset registry，未知会话不回退全局；无编辑接口，明确只读 |
 | Tavern 世界书 / Prompt Template | `tavernMemorySources` v1 的目录、正文、来源 CAS 与 native/managed 策略桥 | 仅声明来源已实现的固定读取链；模板为只读求值子集，世界书独立库与内嵌资源以来源实际声明的能力为准。旧 HTTP 世界书桥明确只读 |
 | Tavern MVU v1 | 公开服务包装、CAS 编辑、使用决策、真实事件观察；可选 card_variable_update 策略桥 | 需要提供 `tavernMvu` v1 的 Tavern 版本；不把旧 Tavern 当作已兼容 |
-| Tavern Request Sources v1 | `memory-manager.resources` 只读来源，版本化块标识 | 需支持 request assembly v1 的 DSH core；用户自行选择装配来源；不会自动改预设 |
+| 独立 assembler 来源协议 v1 | `memory-manager.resources` 只读来源，版本化块标识；adapter 由 assembler 维护 | 需支持 request assembly v1 的 DSH core；用户自行选择装配来源；不会自动改预设 |
 | TaskSystem | scope/authority/使用协议兼容边界 | 本版本没有 TaskSystem adapter，不开放额外模型工具或放宽 guard |
 
 世界书 HTTP 适配默认不启用。共装同一隔离 Host 时可在 profile patch 配置：
@@ -85,3 +85,9 @@ DSH 原生来源默认对所有会话可见，使用原生来源的会话目录�
 支持 `getManagementDefaults({id,scope?})` 的来源提供可撤销的默认规则快照。Manager 不枚举资源来生成规则文件，也不生成全会话白名单。默认绑定、资源选择与现有权限仍由来源检查。来源默认 → 本地字段 → 已引用预设字段依次合成；显式空白名单、空模式对象与拒绝条件保留。列表、详情、校验和真实委托决策使用同一结果，并显示来源报告的当前托管方和配置错误原因。
 
 详情页「恢复来源默认配置」只清除该资源的规则、范围覆盖与预设引用，并把规则路由恢复到正文来源；未知非配置字段保留，不修改他人的全局预设或资源正文。按钮先更新草稿并预览有效默认值，点击「保存管理配置（写入文件）」后经原有 CAS 生效。正文保存与这些管理规则分开。MVU 卡片写入继续由来源现有 grant、范围、schema、CAS 与撤销机制管理；默认委托不自动提供新的卡片写权限。
+
+## 独立 assembler 接入
+
+请求装配 adapter 在独立 `dsh-prompt-assembler` 仓库维护。Manager 不依赖该包运行；assembler adapter 通过公开 `requestAssemblyResources()` 和 `trigger()` 读取资源与配置，不访问 Manager 私有文件。接入、卸载和 applied 证据见 [接入协议](docs/ASSEMBLER.md)。
+
+开发测试将两个仓库放在同一父目录（`dsh-memory-manager` 与 `dsh-prompt-assembler`），再执行 `npm ci` 和 `npm run check`。assembler 仅为测试开发依赖，不进入 Manager 的生产依赖。

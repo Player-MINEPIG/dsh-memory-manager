@@ -2,7 +2,6 @@ import { join } from 'node:path'
 import { MemoryManager } from './manager.js'
 import { Usage } from './usage.js'
 import { skillAdapter } from './adapters/skills.js'
-import { registerRequestSource,observeTavernRequest } from './adapters/request-source.js'
 import {installManagedSources} from './adapters/managed-sources.js'
 import { installMvu } from './adapters/mvu.js'
 import { tavernWorldBooks } from './adapters/tavern.js'
@@ -27,7 +26,6 @@ export async function apply(ctx,config={}){
     c.effect(()=>()=>{disposing=true;clear()})
   })
   ctx.inject(['tavernScopeCatalog'],c=>c.effect(()=>{try{return manager.scopeDirectory.register(tavernScopes(c.tavernScopeCatalog))}catch(error){manager.diagnostics.push({adapterId:'tavern.scopes',code:error.code??'DIRECTORY_UNAVAILABLE',message:error.message});return()=>{}}}))
-  ctx.inject(['tavernRequestSources'],c=>{c.effect(()=>{const stop=registerRequestSource(manager,c.tavernRequestSources,usage);manager.requestSourceAvailable=true;return()=>{manager.requestSourceAvailable=false;stop()}});c.on('llm/stream',async function*(options,next){const session=c.get('agents')?.get(options.sessionId)?.session;try{observeTavernRequest(manager,session,options)}catch(e){manager.diagnostics.push({code:'REQUEST_OBSERVATION_FAILED',message:e.message})}yield* next()})})
   ctx.inject(['tavernMvu'],c=>c.effect(()=>installMvu(manager,c.tavernMvu,usage)))
   let legacyWorldBooks,disposing=false
   const installLegacy=()=>{if(!disposing&&config.tavernBaseUrl&&!manager.adapters.has('tavern.world-books'))legacyWorldBooks=manager.registerAdapter(tavernWorldBooks({baseUrl:config.tavernBaseUrl}))}

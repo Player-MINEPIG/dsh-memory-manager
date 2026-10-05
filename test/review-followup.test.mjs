@@ -3,7 +3,7 @@ import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {MemoryManager} from '../src/manager.js'
 import {Usage} from '../src/usage.js'
-import {registerRequestSource} from '../src/adapters/request-source.js'
+import {registerRequestSource} from 'dsh-prompt-assembler/adapters/memory-manager'
 import {tavernWorldBooks} from '../src/adapters/tavern.js'
 import {skillAdapter} from '../src/adapters/skills.js'
 const record=(id='r',content='synthetic')=>({id,type:'text',content,revision:1})
