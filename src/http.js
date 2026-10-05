@@ -23,7 +23,7 @@ export function handler(manager,connection){return async(req,res)=>{
     else if(req.method==='GET'&&path==='options')result=manager.optionCatalog({id:q.id,adapterId:q.adapterId,sessionId:q.sessionId})
     else if(req.method==='GET'&&path==='adapters')result=manager.adapterCatalog()
     else if(req.method==='GET'&&path==='scope-directory')result=await manager.scopeDirectory.search({...q,refresh:q.refresh==='1',limit:q.limit===undefined?30:Number(q.limit)})
-    else if(req.method==='GET'&&path==='configuration')result=manager.configurationSnapshot({id:q.id,adapterId:q.adapterId})
+    else if(req.method==='GET'&&path==='configuration')result=manager.configurationSnapshot({id:q.id,adapterId:q.adapterId,sessionId:q.sessionId})
     else if(req.method==='GET'&&path==='read')result=await manager.read({adapterId:q.adapterId,id:q.id,scope})
     else if(req.method==='POST'){
       if(req.headers['x-dsh-memory-manager']!=='1'||!req.headers['content-type']?.startsWith('application/json'))fail('FORBIDDEN','Management request headers required')

@@ -1,12 +1,13 @@
 import { mkdir,readFile,writeFile,rename } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { Configuration,clone,fail,effective,applies,safe } from './config.js'
+import { Configuration,clone,fail,safe } from './config.js'
 import {configurationFilterFields,filterValues,validateFilters,matchesConfigurationFilters} from './filters.js'
 import {optionCatalog,validateAdapterCatalog} from './option-catalog.js'
 import {configurationSnapshot,validateEntry,saveEntry} from './configuration-editor.js'
 import {ScopeDirectory} from './scope-directory.js'
 import {adapterCatalog,setAdapterEnabled} from './adapter-controls.js'
 import {sessionCatalog} from './session-catalog.js'
+import {sourceConfiguration,policyApplies} from './source-defaults.js'
 export class MemoryManager {
   scopeDirectory=new ScopeDirectory();disabledAdapters=new Set()
   isAdapterEnabled(id){return this.adapters.has(id)&&!this.disabledAdapters.has(id)}
@@ -16,9 +17,11 @@ export class MemoryManager {
   protocolVersion=1
   adapters=new Map(); lifetimes=new Map(); owners=new Map(); reservations=new Map(); traces=[]; active=new Map(); diagnostics=[]; pending=Promise.resolve()
   constructor({configPath,journalPath}) {this.configuration=new Configuration(configPath);this.journalPath=journalPath}
-  async init() {
+  async init({createIfMissing=false}={}) {
     if(this.journalPath) try {const rows=JSON.parse(await readFile(this.journalPath,'utf8'));if(!Array.isArray(rows)) throw Error('Invalid trace journal');this.traces=rows.slice(-2000);for(const event of this.traces)if(event.phase==='started'&&!this.traces.some(t=>t.id===event.id&&t.adapterId===event.adapterId&&t.sessionId===event.sessionId&&(t.requestId??t.eventId)===(event.requestId??event.eventId)&&['completed','failed','applied','skipped'].includes(t.phase)))event.interrupted=true} catch(e) {if(e.code!=='ENOENT')this.diagnostics.push({code:'JOURNAL_ERROR',message:e.message})}
-    try {await this.reload()} catch { /* Visible; empty policy remains active. */ }
+    try {await this.reload()} catch(error) {
+      if(createIfMissing&&error.code==='ENOENT')try{await this.configuration.createIfMissing();await this.reload()}catch{/* Visible; managed execution remains blocked. */}
+    }
     return this
   }
   registerAdapter(adapter) {
@@ -53,9 +56,9 @@ export class MemoryManager {
       throw error
     }
   }
-  getConfig(id) {return this.configuration.get(id)}
+  getConfig(id,args) {return sourceConfiguration(this,id,args)}
   async reload() {return this.configuration.reload(async doc=>{
-    for(const entry of doc.entries) {const a=this.adapters.get(entry.adapterId);if(a?.validateConfig) await a.validateConfig(effective(doc,entry.id).config)}
+    for(const entry of doc.entries) {const a=this.adapters.get(entry.adapterId);if(a?.validateConfig) await a.validateConfig(this.getConfig(entry.id,{document:doc}).config)}
   })}
   recordTrace(input) {
     const event=clone(input)
@@ -84,6 +87,7 @@ export class MemoryManager {
     const turns=selected(turn),kinds=selected(turnKind),states=selected(status),sources=selected(adapterId)
     const records=[],diagnostics=[...this.diagnostics],catalogs=[],queried=[...this.adapters.values()].filter(a=>matches(sources,a.id)&&this.isAdapterEnabled(a.id))
     const bound=scope.sessionId?await sessionCatalog(this,{scope,adapters:queried,signal}):null
+    const scopeLease=scope.sessionId?await this.scopeDirectory.context(scope,{trustedSource:true}):{scope,checkCurrent:()=>true}
     for(const a of queried) {
       try {const catalog=bound?.(a.id),listed=catalog?catalog.items:await this.invoke(a,'list',{scope,signal});for(const r of listed) {this.claim(a,r);diagnostics.push(...(r.diagnostics??[]).map(d=>({...d,adapterId:a.id})));records.push({...clone(r),adapterId:a.id,authority:r.authority??a.authority,capabilities:{...r.capabilities,edit:!!a.update&&r.capabilities?.edit!==false,copy:!!a.copy&&r.capabilities?.copy!==false,management:!!a.setManagementMode&&r.capabilities?.management!==false}})}catalogs.push({adapterId:a.id,count:listed.length,scope:scope.sessionId?'session':'global',...(catalog?{catalogScope:catalog.catalogScope,binding:catalog.catalogScope==='all-sessions'?'default':'confirmed'}:{}),description:a.describeScope?.(scope)})}
       catch(e) {catalogs.push({adapterId:a.id,count:null,scope:scope.sessionId?'session':'global',...(bound?{binding:a.catalogScope==='all-sessions'?'unavailable':'unconfirmed'}:{})});diagnostics.push({adapterId:a.id,code:e.code??'SOURCE_ERROR',message:e.message})}
@@ -95,12 +99,13 @@ export class MemoryManager {
     const filter=t=>inScope(t)&&matches(turns,t.turn)&&matches(kinds,t.turnKind)
     if(!bound)for(const fact of this.traces.filter(filter))if(matches(sources,fact.adapterId)&&!records.some(r=>r.id===fact.id))records.push({id:fact.id,adapterId:fact.adapterId,missing:true,capabilities:{edit:false,copy:false}})
     const rows=records.map(r=>{
-      const policy=this.getConfig(r.id),facts=[...this.traces,...(r.facts??[])].filter(t=>t.id===r.id&&t.adapterId===r.adapterId&&filter(t)),activeFacts=[...this.active.values()].filter(t=>t.id===r.id&&t.adapterId===r.adapterId&&filter(t)).map(clone),running=activeFacts.length>0
+      const policy=this.getConfig(r.id,{adapterId:r.adapterId,scope}),facts=[...this.traces,...(r.facts??[])].filter(t=>t.id===r.id&&t.adapterId===r.adapterId&&filter(t)),activeFacts=[...this.active.values()].filter(t=>t.id===r.id&&t.adapterId===r.adapterId&&filter(t)).map(clone),running=activeFacts.length>0
       const state=running?'running':facts.some(t=>['triggered','applied','started'].includes(t.phase))?'past':'never'
-      return {...r,config:policy.config,origins:policy.origins,configRevision:policy.revision,managed:r.managementMode==='managed',applicable:applies(policy.config,scope),status:state,facts,activeFacts,interrupted:facts.some(t=>t.interrupted),applied:facts.some(t=>t.phase==='applied')}
+      return {...r,config:policy.config,origins:policy.origins,configRevision:policy.revision,sourceDefault:policy.sourceDefault,scopePolicy:policy.scopePolicy,configError:this.configuration.error,managed:r.managementMode==='managed',applicable:policyApplies(policy,scopeLease.scope,!!bound),status:state,facts,activeFacts,interrupted:facts.some(t=>t.interrupted),applied:facts.some(t=>t.phase==='applied')}
     })
     facets.fields=Object.fromEntries(configurationFilterFields.map(field=>[field,[...new Set(rows.flatMap(r=>filterValues(r,field)))].sort()]))
     const filteredRows=rows.filter(r=>matches(states,r.status)&&matchesConfigurationFilters(r,filters))
+    if(!scopeLease.checkCurrent())fail('SCOPE_CONTEXT_CHANGED','查询期间真实作用域已变化，请重新读取。')
     return {protocolVersion:1,revision:this.configuration.document.revision,configError:this.configuration.error,rows:filteredRows,diagnostics,catalogs,facets,scope:scope.sessionId?{sessionId:scope.sessionId}:{global:true},adapters:[...this.adapters.values()].map(a=>({id:a.id,name:a.name,authority:a.authority}))}
   }
   async read({adapterId,id,sourceAdapterId,scope={},signal}) {

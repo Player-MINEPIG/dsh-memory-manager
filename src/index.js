@@ -12,7 +12,7 @@ import {tavernScopes} from './adapters/tavern-scopes.js'
 export const name='dsh-memory-manager'
 export async function apply(ctx,config={}){
   if(!config.storageDir)throw new Error('storageDir is required')
-  const manager=await new MemoryManager({configPath:config.configPath??join(config.storageDir,'config.json'),journalPath:join(config.storageDir,'observations.json')}).init()
+  const manager=await new MemoryManager({configPath:config.configPath??join(config.storageDir,'config.json'),journalPath:join(config.storageDir,'observations.json')}).init({createIfMissing:true})
   const usage=new Usage(manager)
   usage.registerOperation({id:'memory.read_content',label:'读取资源正文',parameters:{type:'object',properties:{}},readOnly:true,run:({value})=>value?.content})
   usage.registerOperation({id:'memory.to_text',label:'转换为文本',parameters:{type:'object',properties:{}},readOnly:true,run:({value})=>typeof value==='string'?value:JSON.stringify(value)})

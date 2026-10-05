@@ -1,6 +1,7 @@
 import {nativeDependencyLease} from './native-dependency.js'
 import {capabilityErrors} from '../capabilities.js'
-import {applies,clone} from '../config.js'
+import {clone} from '../config.js'
+import {policyApplies} from '../source-defaults.js'
 export function installManagedSources(manager,service,usage){
  if(service.protocolVersion!==1||!Array.isArray(service.adapters))throw Error('Unsupported Tavern memory source protocol')
  const disposers=[]
@@ -15,23 +16,24 @@ export function installManagedSources(manager,service,usage){
     const native=nativeDependencyLease(manager,adapter,request,()=>disposed);if(native)return native
     if(request.managementMode!=='managed')return undefined
     const document=manager.configuration.document,epoch=manager.configuration.pending,lifetime=manager.lifetimes.get(adapter),conditions=new Map(usage.conditions),catalogRevision=manager.optionCatalog({adapterId:adapter.id}).catalogRevision
-    const {config,revision}=manager.getConfig(request.id)
+    const policy=manager.getConfig(request.id,{adapterId:adapter.id,scope:request.scope}),{config,revision}=policy
     if(!config||config.adapterId!==adapter.id||manager.configuration.error)return {enabled:false,reason:'config-unavailable'}
+    if(typeof adapter.getManagementDefaults==='function'&&!policy.sourceDefault.available)return {enabled:false,reason:policy.sourceDefault.reason}
     const mode=adapter.optionCatalog?.events?.find(event=>event.id===request.on)?.mode
     if(!mode)return {enabled:false,reason:'unsupported-event'}
     manager.assertOwner(adapter,request.id)
     if(capabilityErrors(adapter,config,conditions,usage.operations).length)return {enabled:false,reason:'capability-mismatch'}
     await adapter.validateConfig(clone(config))
     const scopeLease=await manager.scopeDirectory.context(request.scope??{},{trustedSource:true})
-    if(!applies(config,scopeLease.scope))return {enabled:false,reason:'scope'}
+    if(!policyApplies(policy,scopeLease.scope,true))return {enabled:false,reason:'scope'}
     const behavior=config[mode]
     if(!behavior||!(Array.isArray(behavior.on)?behavior.on:[behavior.on]).includes(request.on))return {enabled:false,reason:'timing'}
     const enabled=await usage.rule(behavior.rule??true,{...request.event,on:request.on,scope:scopeLease.scope},conditions)
     const owns=()=>{try{manager.assertOwner(adapter,request.id);return true}catch{return false}}
-    const checkCurrent=()=>scopeLease.checkCurrent()&&manager.isAdapterEnabled(adapter.id)&&owns()&&manager.optionCatalog({adapterId:adapter.id}).catalogRevision===catalogRevision&&!disposed&&!lifetime.signal.aborted&&manager.adapters.get(adapter.id)===adapter&&manager.lifetimes.get(adapter)===lifetime&&!manager.configuration.error&&manager.configuration.document===document&&manager.configuration.pending===epoch&&conditions.size===usage.conditions.size&&[...conditions].every(([key,value])=>usage.conditions.get(key)===value)
+    const checkCurrent=()=>policy.checkCurrent()&&scopeLease.checkCurrent()&&manager.isAdapterEnabled(adapter.id)&&owns()&&manager.optionCatalog({adapterId:adapter.id}).catalogRevision===catalogRevision&&!disposed&&!lifetime.signal.aborted&&manager.adapters.get(adapter.id)===adapter&&manager.lifetimes.get(adapter)===lifetime&&!manager.configuration.error&&manager.configuration.document===document&&manager.configuration.pending===epoch&&conditions.size===usage.conditions.size&&[...conditions].every(([key,value])=>usage.conditions.get(key)===value)
     if(!checkCurrent())return {enabled:false,reason:'config-changed'}
     return {enabled,reason:enabled?'matched':'rule',configRevision:revision,strategy:behavior.strategy,checkCurrent}
-   })
+   },{providerId:'dsh-memory-manager'})
    disposers.push(()=>{disposed=true;unuse()})
   }
   manager.boundMemorySource=service

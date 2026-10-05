@@ -18,9 +18,9 @@ npm run check
 dsh plugin --profile web add /absolute/path/to/dsh-memory-manager
 ```
 
-包同时提供 `dsh.bundle`、`cordis.patch.yml` 和预构建 client。默认配置位于 `$DSH_HOME/dsh-memory-manager/config.json`。可在详情页校验并保存本地条目，成功保存会自动递增 `revision`。手动编辑文件可参考 [examples/config.json](examples/config.json)，修改后递增 `revision`，再点击「重新读取管理配置」。未修改文件时重复读取为正常无操作。缺失、损坏或不兼容的配置显示错误，不悄悄生效。旧有效值保留供查看；托管执行在错误期间被阻止。
+包同时提供 `dsh.bundle`、`cordis.patch.yml` 和预构建 client。默认配置位于 `$DSH_HOME/dsh-memory-manager/config.json`。可在详情页校验并保存本地条目，成功保存会自动递增 `revision`。手动编辑文件可参考 [examples/config.json](examples/config.json)，修改后递增 `revision`，再点击「重新读取管理配置」。未修改文件时重复读取为正常无操作。首次安装缺少配置文件时安全创建空的本地覆盖文件；来源默认规则作为独立底层生效。损坏或不兼容的已有配置显示错误，不悄悄覆盖。旧有效值保留供查看；托管执行在错误期间被阻止。
 
-卸载用 `dsh plugin --profile web remove dsh-memory-manager`。来源资源不删除，已持久委托管理的资源不会因为卸载而自动恢复原生执行；需通过来源提供的明确所有权转换。
+卸载用 `dsh plugin --profile web remove dsh-memory-manager`。支持下述默认委托合同的来源在 Manager 注册期间报告并使用 managed 决策，卸载同步撤销旧租约，之后的新请求恢复 Tavern / 来源默认；来源资源不删除。旧来源没有该合同，界面明确标出默认规则不可用，保留其既有模式行为。
 
 ## 资源与使用
 
@@ -79,3 +79,9 @@ A resource manager and usage protocol for DSH. Providers remain authoritative fo
 保存重新校验、比较编辑版本和磁盘内容，写入同目录临时文件并原子替换，成功后版本加一；冲突或失败保留现行配置与草稿。插件内写入串行化；外部编辑器需遵守 revision 协议，不能把本地文件系统当作跨任意进程的事务数据库。
 
 DSH 原生来源默认对所有会话可见，使用原生来源的会话目录与可见性约束；显式禁用和名单/规则的执行限制继续有效。Tavern 卡附属来源只显示 `listBound` 确认的当前绑定资源。角色卡的内嵌世界书和 MVU 状态随当前所属卡；独立世界书、预设/Persona 关联世界书和模板按来源的实际会话绑定返回。名单规则与旧 Trace 不建立资源绑定。未配置管理规则的已绑定资源仍可见；要求实际绑定的来源版本缺少绑定目录时显示“绑定未确认”与原因，不退回全局扫描。全局设置仍用于管理全局目录与本地规则。本插件不添加跨卡启用功能或创建 MVU 实例。
+
+## 来源默认与本地覆盖
+
+支持 `getManagementDefaults({id,scope?})` 的来源提供可撤销的默认规则快照。Manager 不枚举资源来生成规则文件，也不生成全会话白名单。默认绑定、资源选择与现有权限仍由来源检查。来源默认 → 本地字段 → 已引用预设字段依次合成；显式空白名单、空模式对象与拒绝条件保留。列表、详情、校验和真实委托决策使用同一结果，并显示来源报告的当前托管方和配置错误原因。
+
+详情页「恢复来源默认配置」只清除该资源的规则、范围覆盖与预设引用，并把规则路由恢复到正文来源；未知非配置字段保留，不修改他人的全局预设或资源正文。按钮先更新草稿并预览有效默认值，点击「保存管理配置（写入文件）」后经原有 CAS 生效。正文保存与这些管理规则分开。MVU 卡片写入继续由来源现有 grant、范围、schema、CAS 与撤销机制管理；默认委托不自动提供新的卡片写权限。

@@ -5,17 +5,18 @@ import {readFile,open,unlink} from 'node:fs/promises'
 import {readFileSync,renameSync} from 'node:fs'
 import {randomUUID} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
-import {clone,effective,fail,validateDocument} from './config.js'
+import {clone,fail,validateDocument} from './config.js'
 
 function identity({id,adapterId,entry}){
  if(typeof id!=='string'||!id||typeof adapterId!=='string'||!adapterId)fail('INVALID_CONFIG','资源 ID 和提供方不能为空。')
  if(entry&&(entry.id!==id||(entry.sourceAdapterId??entry.adapterId)!==adapterId))fail('IDENTITY_CONFLICT','资源 ID 和权威来源必须保留；更换条目 adapter 只设置规则路由，不迁移正文。')
 }
-export function configurationSnapshot(manager,{id,adapterId}){
+export function configurationSnapshot(manager,{id,adapterId,sessionId}){
  identity({id,adapterId})
  const doc=manager.configuration.document,local=doc.entries.find(e=>e.id===id)??null
  if(local&&(local.sourceAdapterId??local.adapterId)!==adapterId)fail('OWNERSHIP_CONFLICT','该资源已绑定其他提供方。')
- return {id,adapterId,revision:doc.revision,local:clone(local),...effective(doc,id),presets:clone(presetDefinitions(doc)),configError:manager.configuration.error,sourceAvailable:manager.isAdapterEnabled(adapterId)}
+ const {checkCurrent,...policy}=manager.getConfig(id,{adapterId,scope:sessionId?{sessionId}:{}})
+ return {id,adapterId,revision:doc.revision,local:clone(local),...policy,presets:clone(presetDefinitions(doc)),configError:manager.configuration.error,sourceAvailable:manager.isAdapterEnabled(adapterId)}
 }
 function proposedDocument(manager,{id,adapterId,entry,expectedRevision}){
  identity({id,adapterId,entry})
@@ -40,11 +41,12 @@ async function inspect(manager,args,{duringSave=false}={}){
  const add=(level,code,field,message)=>diagnostics.push({level,code,field,message})
  let next
  try{if(args.expectedCatalogRevision&&args.expectedCatalogRevision!==catalogRevision)fail('CATALOG_CHANGED','选项能力已变化，请重新查看并校验草稿。');next=proposedDocument(manager,args)}catch(e){return {report:{valid:false,revision:doc.revision,diagnostics:[{level:'error',code:e.code??'INVALID_CONFIG',field:'configuration',message:e.message}]},checkCurrent:()=>false}}
- const composed=effective(next,args.id),adapter=manager.adapters.get(args.entry.adapterId),source=manager.adapters.get(args.adapterId),lifetime=manager.lifetimes.get(adapter),sourceLifetime=manager.lifetimes.get(source),usage=manager.usage
+ const composed=manager.getConfig(args.id,{adapterId:args.adapterId,scope:args.sessionId?{sessionId:args.sessionId}:{},document:next}),adapter=manager.adapters.get(args.entry.adapterId),source=manager.adapters.get(args.adapterId),lifetime=manager.lifetimes.get(adapter),sourceLifetime=manager.lifetimes.get(source),usage=manager.usage
  const conditions=new Map(usage?.conditions??[]),operations=new Map(usage?.operations??[])
  const owns=()=>{try{manager.assertOwner(source,args.id);return true}catch{return false}}
- const checkCurrent=()=>manager.optionCatalog({id:args.id,adapterId:args.entry?.adapterId??args.adapterId}).catalogRevision===catalogRevision&&owns()&&manager.configuration.document===doc&&(duringSave||manager.configuration.pending===epoch)&&manager.adapters.get(args.entry.adapterId)===adapter&&manager.isAdapterEnabled(adapter?.id)&&manager.lifetimes.get(adapter)===lifetime&&!lifetime?.signal.aborted&&manager.adapters.get(args.adapterId)===source&&manager.isAdapterEnabled(source?.id)&&manager.lifetimes.get(source)===sourceLifetime&&!sourceLifetime?.signal.aborted&&conditions.size===(usage?.conditions.size??0)&&[...conditions].every(([k,v])=>usage.conditions.get(k)===v)&&operations.size===(usage?.operations.size??0)&&[...operations].every(([k,v])=>usage.operations.get(k)===v)
+ const checkCurrent=()=>composed.checkCurrent()&&manager.optionCatalog({id:args.id,adapterId:args.entry?.adapterId??args.adapterId}).catalogRevision===catalogRevision&&owns()&&manager.configuration.document===doc&&(duringSave||manager.configuration.pending===epoch)&&manager.adapters.get(args.entry.adapterId)===adapter&&manager.isAdapterEnabled(adapter?.id)&&manager.lifetimes.get(adapter)===lifetime&&!lifetime?.signal.aborted&&manager.adapters.get(args.adapterId)===source&&manager.isAdapterEnabled(source?.id)&&manager.lifetimes.get(source)===sourceLifetime&&!sourceLifetime?.signal.aborted&&conditions.size===(usage?.conditions.size??0)&&[...conditions].every(([k,v])=>usage.conditions.get(k)===v)&&operations.size===(usage?.operations.size??0)&&[...operations].every(([k,v])=>usage.operations.get(k)===v)
  if(!source||!manager.isAdapterEnabled(args.adapterId))add('error','SOURCE_UNAVAILABLE','resource','权威来源已卸载或停用；不迁移资源正文。')
+ else if(typeof source.getManagementDefaults==='function'&&!composed.sourceDefault.available)add('error',composed.sourceDefault.reason,'configuration',composed.sourceDefault.message??'来源未提供当前资源与范围的有效默认配置，请重新读取来源状态。')
  if(adapter&&args.entry.adapterId!==args.adapterId){
   if(adapter.strategyOwner==='source'||typeof adapter.validateResourceRoute!=='function')add('error','ROUTE_UNSUPPORTED','adapterId','所选 adapter 未提供跨源资源路由验证；草稿可保留，无法保存此组合。')
   else try{const route=await manager.invoke(adapter,'validateResourceRoute',{id:args.id,sourceAdapterId:args.adapterId,scope:args.sessionId?{sessionId:args.sessionId}:{}});if(route?.supported!==true||route.id!==args.id||route.sourceAdapterId!==args.adapterId)throw Error('未确认真实资源 ID 与权威来源');add('info','RESOURCE_ROUTE_VALIDATED','adapterId','规则通过所选 adapter 执行；正文仍由原来源读取并校验权限。')}catch(e){add('error',e.code??'ROUTE_UNSUPPORTED','adapterId',e.message)}
@@ -60,10 +62,11 @@ async function inspect(manager,args,{duringSave=false}={}){
   if(adapter?.strategyOwner!=='source')for(const step of typeof behavior.strategy==='string'?[{operation:behavior.strategy}]:behavior.strategy??[]){const operation=operations.get(step.operation);if(!operation)add('error','OPERATION_UNREGISTERED',`${mode}.strategy`,`操作尚未注册：${step.operation}`);else if(operation.option?.parameters)for(const message of parameterErrors(operation.option.parameters,step.params??{},step.operation))add('error','INVALID_PARAMETERS',`${mode}.strategy`,message)}
   if(behavior.on!==undefined)add('unknown','EVENT_CONTEXT_UNCHECKED',`${mode}.on`,'已检查配置格式；此校验不触发事件，实际事件可达性和所需上下文须运行时确认。')
  }
- if(!composed.config.whitelist.length)add('info','EMPTY_WHITELIST','whitelist','白名单为空，当前配置不会在任何范围生效。')
+ if(composed.scopePolicy==='source-bound')add('info','SOURCE_BOUND_DEFAULT','whitelist','继承来源默认绑定范围；实际选择、资源绑定和权限继续由来源验证。未生成全会话白名单。')
+ else if(!composed.config.whitelist.length)add('info','EMPTY_WHITELIST','whitelist','白名单为空，当前配置不会在任何范围生效。')
  add('unknown','RUNTIME_AUTHORIZATION_UNCHECKED','resource','未读取或修改资源，也未运行条件或操作。资源存在性、内容兼容性及当前权限由来源在实际执行时检查；校验通过不授予权限或接管原生行为。')
  if(!checkCurrent())add('error','VALIDATION_STALE','configuration','校验期间配置、提供方或能力注册发生变化，请重新校验。')
- return {report:{valid:!diagnostics.some(d=>d.level==='error'),revision:doc.revision,local:clone(args.entry),effective:composed.config,origins:composed.origins,diagnostics},next,checkCurrent}
+ return {report:{valid:!diagnostics.some(d=>d.level==='error'),revision:doc.revision,local:clone(args.entry),effective:composed.config,origins:composed.origins,scopePolicy:composed.scopePolicy,sourceDefault:composed.sourceDefault,diagnostics},next,checkCurrent}
 }
 export async function validateEntry(manager,args){return (await inspect(manager,args)).report}
 

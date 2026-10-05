@@ -1,5 +1,6 @@
 import {presetDefinitions} from './builtin-presets.js'
-import { readFile } from 'node:fs/promises'
+import { readFile,mkdir,open } from 'node:fs/promises'
+import {dirname} from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 export const clone = value => structuredClone(value)
 export function fail(code, message) { throw Object.assign(new Error(message), { code }) }
@@ -104,6 +105,13 @@ export class Configuration {
   constructor(path) {this.path=path;this.document={schemaVersion:1,revision:1,entries:[],presets:{}};this.error=null;this.loaded=false;this.pending=Promise.resolve()}
   reload(validate=async()=>{}) {
     const job=this.pending.catch(()=>{}).then(()=>this.load(validate));this.pending=job;return job
+  }
+  async createIfMissing(){
+    await mkdir(dirname(this.path),{recursive:true})
+    let file
+    try{file=await open(this.path,'wx',0o600);await file.writeFile(JSON.stringify(this.document,null,2)+'\n');await file.sync()}
+    catch(error){if(error.code!=='EEXIST')throw error}
+    finally{await file?.close()}
   }
   async load(validate) {
     try {
