@@ -1,0 +1,66 @@
+import {createElement as h} from 'react'
+import {createRoot} from 'react-dom/client'
+import {flushSync} from 'react-dom'
+import {DetailPage,ScopedPanel} from './src/client.js'
+const root=createRoot(document.getElementById('root')),requests=[],checks=[]
+const tick=()=>new Promise(r=>setTimeout(r,30)),text=()=>document.getElementById('root').textContent
+const check=(name,condition)=>{if(!condition)throw Error(name+'; DOM: '+text());checks.push({name,pass:true})}
+const wait=async predicate=>{for(let i=0;i<50&&!predicate();i++)await tick();if(!predicate())throw Error('Fixture wait failed')}
+// Deliberately ignore AbortSignal when settling: components must reject stale completions themselves.
+window.fetch=(url,options={})=>new Promise((resolve,reject)=>requests.push({url:new URL(url,'http://own-fixture'),signal:options.signal,done:false,resolve(value){this.done=true;resolve({ok:true,json:async()=>value})},reject(error){this.done=true;reject(error)}}))
+const row={id:'mvu:own',adapterId:'tavern.mvu',name:'Own fixture',managementMode:'managed',sourceDefault:{available:false,reason:'SOURCE_DEFAULTS_UNAVAILABLE',message:'旧范围拒绝'},capabilities:{edit:false},facts:[],activeFacts:[]}
+const success={id:row.id,adapterId:row.adapterId,revision:1,local:null,config:{id:row.id,adapterId:row.adapterId,type:'mvu-state',whitelist:[],blacklist:[],store:{},retrieve:{}},origins:{},sourceAvailable:true,sourceDefault:{available:true,revision:'own-source-v1'}}
+const denial={...success,config:null,sourceDefault:{available:false,reason:'SOURCE_DEFAULTS_UNAVAILABLE',message:'来源确认：当前资源未绑定此会话'}}
+const options={fields:{},presets:[],catalogRevision:'own-catalog'}
+const unresolved=(path,session)=>requests.filter(r=>!r.done&&r.url.pathname.endsWith(path)&&r.url.searchParams.get('sessionId')===session)
+const settle=(path,session,value)=>unresolved(path,session).forEach(r=>r.resolve(value))
+const renderDetail=(session,revision=1)=>flushSync(()=>root.render(h(DetailPage,{row,sessionId:session,liveRevision:revision,onBack(){},onChange(){}})))
+const renderPanel=session=>flushSync(()=>root.render(h(ScopedPanel,{sessionId:session})))
+const queryData=accepted=>({revision:1,rows:[{...row,...(accepted?{config:success.config,sourceDefault:success.sourceDefault}:{})}],adapters:[{id:row.adapterId,name:'Own source'}],catalogs:[],diagnostics:[],facets:{fields:{},turns:[]}})
+const button=label=>[...document.querySelectorAll('button')].find(b=>b.textContent===label)
+window.runLoadingChecks=async()=>{
+ renderDetail('own-a');await wait(()=>unresolved('/configuration','own-a').length)
+ check('detail initial pending hides stale row failure',text().includes('加载中')&&!text().includes('旧范围拒绝')&&!text().includes('不可用'))
+ settle('/configuration','own-a',success);settle('/options','own-a',options);await tick()
+ check('detail pending to success',text().includes('来源默认规则')&&!text().includes('加载中'))
+ renderDetail('own-b');await wait(()=>unresolved('/configuration','own-b').length)
+ settle('/configuration','own-b',denial);settle('/options','own-b',options);await tick()
+ check('settled source denial shows its concrete message',text().includes('当前资源未绑定此会话')&&!text().includes('加载中'))
+ renderDetail('own-b',2);await tick();button('重新载入配置').click();await tick()
+ check('reload pending hides previous denial',text().includes('加载中')&&!text().includes('当前资源未绑定此会话'))
+ const stale=unresolved('/configuration','own-b');renderDetail('own-c');await wait(()=>unresolved('/configuration','own-c').length)
+ stale.forEach(r=>r.reject(Error('旧失败不得进入新页面')));settle('/options','own-b',options);await tick()
+ check('cancelled detail error cannot enter new scope',text().includes('加载中')&&!text().includes('旧失败'))
+ check('old detail transport is aborted',stale.every(r=>r.signal.aborted))
+ const late=unresolved('/configuration','own-c');renderDetail('own-d');await wait(()=>unresolved('/configuration','own-d').length)
+ settle('/configuration','own-d',success);settle('/options','own-d',options);await tick()
+ late.forEach(r=>r.resolve(denial));settle('/options','own-c',options);await tick()
+ check('cancelled detail success cannot replace current result',text().includes('来源默认规则')&&!text().includes('当前资源未绑定此会话'))
+ renderDetail('own-e');await wait(()=>unresolved('/configuration','own-e').length)
+ unresolved('/configuration','own-e').forEach(r=>r.reject(Error('当前读取被拒绝')));settle('/options','own-e',options);await tick()
+ check('settled request error ends loading and shows current error',text().includes('当前读取被拒绝')&&!text().includes('加载中'))
+ renderPanel('own-p');await wait(()=>unresolved('/query','own-p').length)
+ check('panel initial pending',text().includes('加载中')&&!text().includes('不可用'))
+ settle('/query','own-p',queryData(false));await tick()
+ check('panel settled denial',text().includes('旧范围拒绝'))
+ renderPanel('own-q');check('panel scope changes synchronously hide old failure',text().includes('加载中')&&!text().includes('旧范围拒绝'))
+ await wait(()=>unresolved('/query','own-q').length);const staleQuery=unresolved('/query','own-q')
+ renderPanel('own-r');await wait(()=>unresolved('/query','own-r').length)
+ staleQuery.forEach(r=>r.reject(Error('旧查询拒绝')));await tick()
+ check('old query error cannot enter new scope',text().includes('加载中')&&!text().includes('旧查询拒绝'))
+ settle('/query','own-r',queryData(true));await tick()
+ check('new panel scope settles successfully',text().includes('来源默认规则'))
+ button('重新读取管理配置').click();await wait(()=>requests.some(r=>!r.done&&r.url.pathname.endsWith('/reload')))
+ requests.filter(r=>!r.done&&r.url.pathname.endsWith('/reload')).forEach(r=>r.resolve({revision:2,unchanged:false}));await tick()
+ check('new configuration generation shows pending',text().includes('加载中')&&!text().includes('旧范围拒绝'))
+ const oldGeneration=unresolved('/query','own-r')
+ button('重新读取管理配置').click();await wait(()=>requests.some(r=>!r.done&&r.url.pathname.endsWith('/reload')))
+ requests.filter(r=>!r.done&&r.url.pathname.endsWith('/reload')).forEach(r=>r.resolve({revision:3,unchanged:false}));await tick()
+ oldGeneration.forEach(r=>r.reject(Error('旧代次拒绝')));await tick()
+ check('same-scope old generation error cannot enter new generation',text().includes('加载中')&&!text().includes('旧代次拒绝'))
+ check('same-scope old generation request is aborted',oldGeneration.every(r=>r.signal.aborted))
+ settle('/query','own-r',queryData(true));await tick()
+ check('configuration generation settles successfully',text().includes('来源默认规则'))
+ flushSync(()=>root.unmount())
+ return checks
+}
