@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {createRequire} from 'node:module'
 import {pathToFileURL} from 'node:url'
 import {join,resolve} from 'node:path'
-import {mkdtemp,writeFile,rm} from 'node:fs/promises'
+import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import * as managerPlugin from '../src/index.js'
 import {roundRows,resourceStatus,policySkipReasons} from '../src/session-rounds.js'
@@ -39,6 +39,9 @@ test('native world-book request receipts reach the manager without management co
    assert.match(texts,/EMBEDDED_WORLD_BOOK_BODY/);assert.match(texts,/STANDALONE_WORLD_BOOK_BODY/)
    const event=agent.session.snapshotEvents().findLast(event=>event.type==='request/assembly'),rows=roundRows(await query(),String(event.data.turn))
    for(const id of ids){const row=rows.find(row=>row.id===id);assert(row,id);assert.equal(row.managementMode,'native');assert.equal(row.config,null);assert.equal(row.applied,true,`${id}: ${JSON.stringify(event.data.metadata.assembly.diagnostics)}`);assert.equal(row.facts.filter(fact=>fact.phase==='applied').length,1);assert.equal(row.facts[0].requestId,`${agent.id}:${event.seq}`)}
+   await ctx.dshMemoryManager.pending
+   const journal=JSON.parse(await readFile(join(dir,'observations.json'),'utf8'))
+   for(const id of ids){const row=rows.find(row=>row.id===id);assert.deepEqual(journal.filter(fact=>fact.id===id&&fact.adapterId===row.adapterId&&fact.requestId===`${agent.id}:${event.seq}`&&fact.phase==='applied'),row.facts.filter(fact=>fact.phase==='applied'))}
   }
   const source=ctx.tavernMemorySources.worldBooks,id='world-book:'+book.id,before=source.read({id})
   source.setManagementMode({id,mode:'managed',expectedRevision:before.revision,operationId:'explicit-managed-fixture'})
@@ -46,5 +49,10 @@ test('native world-book request receipts reach the manager without management co
   const event=agent.session.snapshotEvents().findLast(event=>event.type==='request/assembly'),skipped=roundRows(await query(),String(event.data.turn)).find(row=>row.id===id)
   assert.equal(skipped.applied,false);assert.equal(resourceStatus(skipped),'策略跳过');assert.equal(policySkipReasons(skipped),'config-unavailable')
   assert.equal(skipped.facts.filter(fact=>fact.phase==='skipped').length,1);assert.equal(skipped.managementMode,'managed');assert.equal(skipped.config,null)
+  assert.equal(skipped.facts[0].requestId,`${agent.id}:${event.seq}`)
+  await ctx.dshMemoryManager.pending
+  const journal=JSON.parse(await readFile(join(dir,'observations.json'),'utf8'))
+  assert.deepEqual(journal.filter(fact=>fact.id===id&&fact.adapterId===skipped.adapterId&&fact.requestId===`${agent.id}:${event.seq}`&&fact.phase==='skipped'),skipped.facts)
+  assert.deepEqual(JSON.parse(await readFile(configPath,'utf8')).entries,[])
  }finally{await ctx.fiber.dispose();await rm(dir,{recursive:true,force:true})}
 })
