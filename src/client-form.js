@@ -22,6 +22,10 @@ export function removeModeFrom(form,mode){
  if(!['store','retrieve'].includes(mode))throw Error('Unknown configuration mode')
  return {...form,['__'+mode+'Present']:false,...Object.fromEntries(['on','rule','strategy'].map(child=>[mode+'.'+child,'']))}
 }
+export function restoreSourceDefaults(form,row){
+ const restored=removeModeFrom(removeModeFrom(form,'store'),'retrieve')
+ return {...restored,adapterId:row.adapterId,__presetPresent:false,type:'',preset:'',whitelist:'',blacklist:''}
+}
 export function effectiveDraftType(form,presets=[]){
  const preset=presets.find(p=>p.id===form.preset)?.configuration
  return preset&&Object.hasOwn(preset,'type')?preset.type:form.type||undefined
