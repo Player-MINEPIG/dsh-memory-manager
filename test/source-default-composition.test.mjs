@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {effective,applies,validateDocument} from '../src/config.js'
 import {formFrom,entryFrom,restoreSourceDefaults} from '../src/client-form.js'
+import {managementStatus} from '../src/client-management.js'
 
 const row={id:'own-resource',adapterId:'own-source'}
 const defaults={...row,type:'world-book',retrieve:{on:'before_model_request',rule:true,strategy:[{operation:'source.activate'},{operation:'source.emit'}]}}
@@ -26,6 +27,7 @@ test('existing deny, empty lists and deliberately empty modes do not turn into d
   assert.deepEqual(result.config.retrieve,retrieve.rule===false?{...defaults.retrieve,rule:false}:{})
   assert.deepEqual(result.config.whitelist,[])
   assert.equal(applies(result.config,{sessionId:'own-session'}),false)
+  assert.match(managementStatus({...result,managementMode:'managed',sourceDefault:{available:true}}),/本地 \/ 预设覆盖/)
  }
  const doc=document([{...row,preset:'named'}]);doc.presets.named.whitelist=[]
  assert.equal(effective(doc,row.id,defaults).origins.whitelist,'preset:named')
@@ -51,4 +53,5 @@ test('restoring a resource clears its policy, scope, preset reference and altern
  assert.equal(result.config.adapterId,row.adapterId)
  assert.deepEqual(doc,before)
  assert.deepEqual(doc.presets.named,{retrieve:{rule:true}})
+ assert.match(managementStatus({...result,managementMode:'managed',sourceDefault:{available:true}}),/来源默认规则$/)
 })

@@ -5,7 +5,7 @@ export function managementStatus(row){
  const prefix=`当前托管：${owner}`
  if(row.configError)return `${prefix} · 管理配置错误，委托决策被阻止（${row.configError.code}）`
  if(row.sourceDefault?.available){
-  const overridden=Object.entries(row.origins??{}).some(([field,origin])=>['type','preset','whitelist','blacklist'].includes(field)||field.startsWith('store.')||field.startsWith('retrieve.')?origin==='local'||origin?.startsWith('preset:'):false)
+  const overridden=Object.entries(row.origins??{}).some(([field,origin])=>(['type','preset','whitelist','blacklist'].includes(field)||/^(store|retrieve)\.(on|rule|strategy)$/.test(field))&&(origin==='local'||origin?.startsWith('preset:')))||['store','retrieve'].some(mode=>row.origins?.[mode]==='local'&&row.config?.[mode]&&Object.keys(row.config[mode]).length===0)
   return `${prefix} · ${overridden?'来源默认 + 本地 / 预设覆盖':'来源默认规则'}`
  }
  const reason=reasons[row.sourceDefault?.reason]??row.sourceDefault?.message??'来源默认规则不可用'

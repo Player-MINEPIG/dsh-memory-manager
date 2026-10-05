@@ -72,10 +72,11 @@ for(const mvu of [false,true])test(`${mvu?'MVU':'source bridge'}: install defaul
 })
 
 test('explicit empty scope/mode and blacklist remain denied; source-bound defaults do not authorize generic usage',async t=>{
- const {manager,fixture,args}=await setup(t)
+ const {manager,fixture,args,row}=await setup(t)
  for(const entry of [{whitelist:[]},{retrieve:{}},{blacklist:[fixture.scope]}]){
   await manager.saveEntry(args({id:fixture.id,adapterId:fixture.adapterId,...entry}))
   assert.equal((await fixture.decide()).enabled,false)
+  if(entry.retrieve)assert.match(managementStatus(await row()),/本地 \/ 预设覆盖/)
  }
  await manager.saveEntry(args({id:fixture.id,adapterId:fixture.adapterId}))
  assert.deepEqual(await manager.usage.trigger({id:fixture.id,event:{eventId:'browser-claim',on:'before_model_request',scope:fixture.scope}}),{matched:false,reason:'scope-or-timing'})

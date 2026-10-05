@@ -552,7 +552,7 @@ function managementStatus(row) {
   const prefix = `\u5F53\u524D\u6258\u7BA1\uFF1A${owner}`;
   if (row.configError) return `${prefix} \xB7 \u7BA1\u7406\u914D\u7F6E\u9519\u8BEF\uFF0C\u59D4\u6258\u51B3\u7B56\u88AB\u963B\u6B62\uFF08${row.configError.code}\uFF09`;
   if (row.sourceDefault?.available) {
-    const overridden = Object.entries(row.origins ?? {}).some(([field, origin]) => ["type", "preset", "whitelist", "blacklist"].includes(field) || field.startsWith("store.") || field.startsWith("retrieve.") ? origin === "local" || origin?.startsWith("preset:") : false);
+    const overridden = Object.entries(row.origins ?? {}).some(([field, origin]) => (["type", "preset", "whitelist", "blacklist"].includes(field) || /^(store|retrieve)\.(on|rule|strategy)$/.test(field)) && (origin === "local" || origin?.startsWith("preset:"))) || ["store", "retrieve"].some((mode) => row.origins?.[mode] === "local" && row.config?.[mode] && Object.keys(row.config[mode]).length === 0);
     return `${prefix} \xB7 ${overridden ? "\u6765\u6E90\u9ED8\u8BA4 + \u672C\u5730 / \u9884\u8BBE\u8986\u76D6" : "\u6765\u6E90\u9ED8\u8BA4\u89C4\u5219"}`;
   }
   const reason = reasons[row.sourceDefault?.reason] ?? row.sourceDefault?.message ?? "\u6765\u6E90\u9ED8\u8BA4\u89C4\u5219\u4E0D\u53EF\u7528";
