@@ -1,3 +1,6 @@
+export const statusLabels={running:'正在触发',past:'曾触发',never:'未记录触发'}
+export const policySkipReasons=row=>[...new Set((row.facts??[]).filter(f=>f.phase==='skipped'&&f.code==='WORLD_BOOK_POLICY_SKIPPED').map(f=>f.reason||'具体原因未记录'))].join(' / ')
+export const resourceStatus=row=>row.status==='running'?statusLabels.running:row.applied?'已应用':policySkipReasons(row)?'策略跳过':statusLabels[row.status]??'未确认'
 const triggered=new Set(['started','triggered','applied'])
 const kinds={human:'人类输入',task:'任务上下文',system:'系统',unknown:'未确认来源'}
 const roundOf=fact=>fact.turn==null?null:String(fact.turn)

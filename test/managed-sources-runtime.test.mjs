@@ -35,3 +35,49 @@ test('real Tavern source catalog → builtin reference → validation/save → m
  await manager.saveEntry({id,adapterId,entry:denied,expectedRevision:2});assert.equal((await source.resolve(context)).blocks.length,0)
  await manager.saveEntry({id,adapterId,entry,expectedRevision:3});const pending=await source.resolve(context);stop();assert.throws(()=>source.validateResolved(context),{code:'SOURCE_POLICY_CHANGED'});assert.equal((await source.resolve(context)).blocks.length,0)
 })
+
+test('native world-book source receipt associates the real request with an unconfigured manager row',{skip:!root&&'Set DSH_MEMORY_SOURCES to Tavern source protocol 1 checkout'},async t=>{
+ const {createMemorySources}=await import(pathToFileURL(join(root,'packages/memory-sources/index.js')))
+ const {WorldBookStore}=await import(pathToFileURL(join(root,'packages/world-book-library/src/store.js')))
+ const {createWorldBookAdapter}=await import(pathToFileURL(join(root,'packages/tavern-loader/src/world-book-adapter.js')))
+ const {createDefaultRegistry,assembleRequestAsync,BUILTINS}=await import(pathToFileURL(join(root,'packages/request-assembler/index.js')))
+ const {projectSystemSnapshots}=await import(pathToFileURL(join(root,'packages/request-assembler/system-snapshots.js')))
+ const {roundRows}=await import('../src/session-rounds.js')
+ const directory=await mkdtemp(join(tmpdir(),'manager-worldbook-'));t.after(()=>rm(directory,{recursive:true,force:true}))
+ const store=new WorldBookStore(directory),doc=store.import({entries:{0:{uid:0,constant:true,content:'WORLD_BOOK_REQUEST_PROOF'}}},{name:'Fixture'})
+ const session={id:'s',header:{id:'s',version:4,createdAt:'fixture'}}
+ const selected={worldBookIds:[doc.id],characterId:null},service=createMemorySources({storageDir:directory,store,getSession:()=>session,getSelection:()=>selected})
+ const manager=new MemoryManager({configPath:join(directory,'missing.json')}),usage=new Usage(manager),stop=installManagedSources(manager,service,usage)
+ t.after(async()=>{stop();service.dispose();await manager.dispose()})
+ const id='world-book:'+doc.id,scope={sessionId:'s'},nativeMessages=[{id:'user',role:'user',content:[{type:'text',text:'Hello'}]}]
+ const projected=createWorldBookAdapter(store).resolve({selection:{worldBookIds:[doc.id]},requestAssembly:true})
+ const {hash}=await import(pathToFileURL(join(root,'packages/memory-sources/policy.js')))
+ const assets={loreEntries:projected.loreEntries,worldBookIds:[doc.id],worldBookRevisions:{[doc.id]:hash(doc)}}
+ const registry=createDefaultRegistry({worldbookPolicy:(c,o)=>service.worldBooks.filter(c,o),worldbookValidateResolved:service.worldBooks.validateResolved})
+ const logical=await assembleRequestAsync({registry,preset:BUILTINS[0],assets,sessionId:'s',turn:2,step:0,nativeMessages,inputIds:['user']})
+ const result=projectSystemSnapshots(logical,nativeMessages,undefined,{systemPromptUpdate:'in-history'})
+ const event={type:'request/assembly',seq:3,data:{turn:2,step:0,messages:result.messages,metadata:{owner:'pmp-dsh-tavern',assembly:{...result,preview:false}}}}
+ session.snapshotEvents=()=>[event]
+ const read=async turn=>roundRows(await manager.query({scope}),turn).find(row=>row.id===id)
+ assert.equal((await read('2')).facts.length,0)
+ // A preview, absent request and a side call do not become usage evidence.
+ event.data.metadata.assembly.preview=true;service.observeRequest({messages:result.messages},session)
+ event.data.metadata.assembly.preview=false;service.observeRequest({messages:[]},session)
+ assert.equal((await read('2')).facts.length,0)
+ service.observeRequest({messages:result.messages},session);service.observeRequest({messages:result.messages},session)
+ const row=await read('2')
+ assert.equal(row.config,null);assert.equal(row.managementMode,'native');assert.equal(row.applied,true);assert.equal(row.status,'past');assert.equal(row.facts.length,1);assert.equal(row.facts[0].requestId,'s:3');assert.equal(row.facts[0].revision,service.worldBooks.read({id}).revision)
+ assert.equal((await read('1')).facts.length,0);assert.equal((await read('1')).applied,false)
+ // Explicit managed mode without a manager configuration skips the candidate;
+ // it must report the actual skip, never a fabricated application.
+ const before=service.worldBooks.read({id})
+ service.worldBooks.setManagementMode({id,mode:'managed',expectedRevision:before.revision,operationId:'managed-fixture'})
+ const deniedLogical=await assembleRequestAsync({registry,preset:BUILTINS[0],assets,sessionId:'s',turn:3,step:0,nativeMessages,inputIds:['user']})
+ const denied=projectSystemSnapshots(deniedLogical,nativeMessages,undefined,{systemPromptUpdate:'in-history'})
+ assert(!JSON.stringify(denied.messages).includes('WORLD_BOOK_REQUEST_PROOF'))
+ event.seq=4;event.data={turn:3,step:0,messages:denied.messages,metadata:{owner:'pmp-dsh-tavern',assembly:denied}}
+ service.observeRequest({messages:denied.messages},session);service.observeRequest({messages:denied.messages},session)
+ const skipped=await read('3'),{resourceStatus,policySkipReasons}=await import('../src/session-rounds.js')
+ assert.equal(skipped.facts.length,1);assert.equal(skipped.applied,false);assert.equal(skipped.facts[0].phase,'skipped');assert.equal(skipped.facts[0].reason,'config-unavailable')
+ assert.equal(resourceStatus(skipped),'策略跳过');assert.equal(policySkipReasons(skipped),'config-unavailable');assert.equal(skipped.managementMode,'managed');assert.deepEqual(manager.configuration.document.entries,[])
+})
