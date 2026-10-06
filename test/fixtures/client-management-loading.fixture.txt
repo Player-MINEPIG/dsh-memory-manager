@@ -2,12 +2,14 @@ import {createElement as h} from 'react'
 import {createRoot} from 'react-dom/client'
 import {flushSync} from 'react-dom'
 import {DetailPage,ScopedPanel} from './src/client.js'
+import {PresetsPage} from './src/client-presets.js'
+import {requestJson} from './src/client-request.js'
 const root=createRoot(document.getElementById('root')),requests=[],checks=[]
 const tick=()=>new Promise(r=>setTimeout(r,30)),text=()=>document.getElementById('root').textContent
 const check=(name,condition)=>{if(!condition)throw Error(name+'; DOM: '+text());checks.push({name,pass:true})}
 const wait=async predicate=>{for(let i=0;i<50&&!predicate();i++)await tick();if(!predicate())throw Error('Fixture wait failed')}
 // Deliberately ignore AbortSignal when settling: components must reject stale completions themselves.
-window.fetch=(url,options={})=>new Promise((resolve,reject)=>requests.push({url:new URL(url,'http://own-fixture'),signal:options.signal,done:false,resolve(value){this.done=true;resolve({ok:true,json:async()=>value})},reject(error){this.done=true;reject(error)}}))
+window.fetch=(url,options={})=>new Promise((resolve,reject)=>requests.push({url:new URL(url,'http://own-fixture'),signal:options.signal,body:options.body?JSON.parse(options.body):undefined,done:false,resolve(value){this.done=true;resolve({ok:true,json:async()=>value})},reject(error){this.done=true;reject(error)}}))
 const row={id:'mvu:own',adapterId:'tavern.mvu',name:'Own fixture',managementMode:'managed',sourceDefault:{available:false,reason:'SOURCE_DEFAULTS_UNAVAILABLE',message:'旧范围拒绝'},capabilities:{edit:false},facts:[],activeFacts:[]}
 const success={id:row.id,adapterId:row.adapterId,revision:1,local:null,config:{id:row.id,adapterId:row.adapterId,type:'mvu-state',whitelist:[],blacklist:[],store:{},retrieve:{}},origins:{},sourceAvailable:true,sourceDefault:{available:true,revision:'own-source-v1'}}
 const denial={...success,config:null,sourceDefault:{available:false,reason:'SOURCE_DEFAULTS_UNAVAILABLE',message:'来源确认：当前资源未绑定此会话'}}
@@ -23,6 +25,10 @@ window.runLoadingChecks=async()=>{
  check('detail initial pending hides stale row failure',text().includes('加载中')&&!text().includes('旧范围拒绝')&&!text().includes('不可用'))
  settle('/configuration','own-a',success);settle('/options','own-a',options);await tick()
  check('detail pending to success',text().includes('来源默认规则')&&!text().includes('加载中'))
+ renderDetail('options-pending');await wait(()=>unresolved('/configuration','options-pending').length)
+ settle('/configuration','options-pending',success);await tick()
+ check('configuration does not wait for a stalled options catalog',text().includes('来源默认规则')&&!text().includes('当前托管：加载中')&&text().includes('选项目录尚未返回'))
+ settle('/options','options-pending',options);await tick()
  renderDetail('own-b');await wait(()=>unresolved('/configuration','own-b').length)
  settle('/configuration','own-b',denial);settle('/options','own-b',options);await tick()
  check('settled source denial shows its concrete message',text().includes('当前资源未绑定此会话')&&!text().includes('加载中'))
@@ -74,6 +80,25 @@ window.runLoadingChecks=async()=>{
  renderPanel('failed-read');await wait(()=>unresolved('/query','failed-read').length)
  unresolved('/query','failed-read').forEach(r=>r.reject(Object.assign(Error('corrupt session file'),{code:'SESSION_READ_FAILED'})));await tick()
  check('failed session read remains a distinct failure',text().includes('来源读取失败')&&text().includes('corrupt session file')&&!text().includes('正在初始化'))
+ flushSync(()=>root.render(h(PresetsPage,{api:(path,body,signal)=>requestJson(window.fetch,'/api/dsh-memory-manager'+path,{body,signal}),onBack(){},onChange(){}})))
+ await wait(()=>unresolved('/presets',null).length)
+ const original={id:'adapter:a:default',label:'Default A',description:'Reusable rules',adapterIds:['a'],configuration:{retrieve:{rule:true}},origin:'adapter'}
+ settle('/presets',null,{format:'dsh-memory-manager-presets',version:1,revision:1,presets:[original]});await tick()
+ check('presets page exposes create/import/export/edit and adapter default',!!button('新建预设')&&!!button('导入预设')&&!!button('导出全部预设')&&text().includes('adapter 默认预设'))
+ button('编辑 Default A').click();await wait(()=>unresolved('/options',null).length)
+ settle('/options',null,{...options,adapters:[{id:'a',label:'Adapter A',enabled:true}],fields:{'retrieve.rule':[{id:'always',label:'Always',value:true,adapterIds:[],presetIds:[],available:true}]}});await tick()
+ const input=document.querySelector('[aria-label="预设名称"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'My edited default');input.dispatchEvent(new Event('input',{bubbles:true}));await tick()
+ button('保存预设').click();await wait(()=>unresolved('/save-presets',null).length)
+ const saving=unresolved('/save-presets',null)[0]
+ check('edit sends explicit replacement and CAS without resource identity or scopes',saving.body.replace===true&&saving.body.expectedRevision===1&&saving.body.bundle.presets[0].label==='My edited default'&&Object.keys(saving.body.bundle.presets[0].configuration).join()==='retrieve')
+ const edited={...saving.body.bundle.presets[0],origin:'local'};saving.resolve({revision:2,presets:[edited]});await tick()
+ check('saved adapter default becomes local override and draft is clean',text().includes('本地预设')&&text().includes('预设已保存')&&button('保存预设').disabled)
+ let exported;URL.createObjectURL=blob=>{exported=blob;return 'blob:own-test'};URL.revokeObjectURL=()=>{};HTMLAnchorElement.prototype.click=()=>{}
+ button('导出 My edited default').click();const portable=JSON.parse(await exported.text())
+ check('export is a portable preset bundle rather than runtime metadata',portable.version===1&&portable.format==='dsh-memory-manager-presets'&&portable.presets[0].origin===undefined&&portable.presets[0].label==='My edited default')
+ const fileInput=document.querySelector('[aria-label="导入预设文件"]');Object.defineProperty(fileInput,'files',{configurable:true,value:[new File([JSON.stringify({...portable,presets:[{...portable.presets[0],unknown:true}]})],'bad.json')]});fileInput.dispatchEvent(new Event('change',{bubbles:true}));await wait(()=>unresolved('/save-presets',null).length)
+ const importing=unresolved('/save-presets',null)[0];check('file import does not implicitly overwrite',importing.body.replace===false&&importing.body.expectedRevision===2);importing.reject(Object.assign(Error('Malformed preset; entire batch rejected'),{code:'INVALID_PRESET'}));await tick()
+ check('failed import keeps existing library and editable draft',text().includes('entire batch rejected')&&text().includes('本地预设')&&document.querySelector('[aria-label="预设名称"]').value==='My edited default')
  flushSync(()=>root.unmount())
  return checks
 }

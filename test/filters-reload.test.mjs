@@ -47,5 +47,7 @@ test('multi-select OR within dimensions, AND across dimensions, empty unlimited;
 test('HTTP accepts repeated filter values and preserves punctuation without comma splitting',async()=>{
  let query;const req={url:'/api/dsh-memory-manager/query?sessionId=s&adapterId=a&adapterId=b%2Cc&turn=1&turn=2&status=past&status=running',method:'GET',headers:{host:'localhost'}},res={setHeader(){},end(){}}
  await handler({query:async q=>{query=q;return {}}},{admit:()=>({peer:{}})})(req,res)
- assert.deepEqual(query,{scope:{sessionId:'s'},adapterId:['a','b,c'],turn:['1','2'],status:['past','running'],turnKind:[]})
+ assert.ok(query.signal instanceof AbortSignal)
+ const {signal,...values}=query
+ assert.deepEqual(values,{scope:{sessionId:'s'},adapterId:['a','b,c'],turn:['1','2'],status:['past','running'],turnKind:[]})
 })

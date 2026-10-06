@@ -33,7 +33,7 @@ dsh plugin --profile web add /absolute/path/to/dsh-memory-manager
 
 卡片变量写入使用独立的 `card_variable_update` 时机和来源验证事务。代码审批、写能力授权和管理规则是分别校验的条件；默认示例不启用写，历史气泡不提升到当前可写范围。`mvu_card_write_cause` 可筛选宿主确认的交互、定时器或脚本调用原因，不能代替授权。具体合同见 API 文档。本地合成卡已验证完整授权、写入、通知、撤销和首轮失效链路；这不代表任意第三方卡片或完整 Helper 框架兼容。
 
-详情页通过独立选项页编辑类型、预设、名单、存储和读取字段，支持搜索、来源/预设筛选、参数控件、条件树和顺序操作链。未知参数原样保留并允许明确替换；管理配置无需手输 JSON。完整能力、内置预设与本地声明扩展示例见 [选项与扩展文档](docs/OPTIONS.md)。不会运行配置文件中的 JS。可信 Host 插件可注册条件/操作。时间检查点可接同一触发协议；主动唤醒 Agent 还需宿主调度与授权，本插件不建立后台任务循环。
+详情页通过独立选项页编辑类型、预设、名单、存储和读取字段，支持搜索、来源/预设筛选、参数控件、条件树和顺序操作链。未知参数原样保留并允许明确替换；管理配置无需手输 JSON。「存取预设」页提供新建、编辑、导入和导出，adapter 默认组合可保存为本地覆盖；[存取预设文档](docs/PRESETS.md)说明文件格式与整批拒绝规则。完整能力、内置预设与本地声明扩展示例见 [选项与扩展文档](docs/OPTIONS.md)。不会运行配置文件中的 JS。可信 Host 插件可注册条件/操作。时间检查点可接同一触发协议；主动唤醒 Agent 还需宿主调度与授权，本插件不建立后台任务循环。
 
 ## 可选适配
 
@@ -62,13 +62,13 @@ HTTP 地址只接受明确配置的 loopback origin。管理路由使用 DSH `co
 
 ## English
 
-A resource manager and usage protocol for DSH. Providers remain authoritative for content, revision, permissions and atomic writes. Two native panels expose configuration provenance and actual usage evidence. JSON policies use explicit timing, composable rules, trusted operation chains and continuously overriding presets. Optional adapters live in this repository; source systems do not depend on the manager. No vector engine, summarizer, task ledger copy or autonomous scheduler is included. This is an unpublished local development build; browser acceptance and cross-plugin integration must be reported separately from unit tests.
+A resource manager and usage protocol for DSH. Providers remain authoritative for content, revision, permissions and atomic writes. Two native panels expose configuration provenance and actual usage evidence. JSON policies use explicit timing, composable rules, trusted operation chains and continuously overriding presets. Optional adapters live in this repository; source systems do not depend on the manager. No vector engine, summarizer, task ledger copy or autonomous scheduler is included. The separate preset library supports create/edit/import/export, including editable adapter defaults and atomic rejection of invalid imports; see [preset documentation](docs/PRESETS_en.md). This is an unpublished local development build; browser acceptance and cross-plugin integration must be reported separately from unit tests.
 
 ### 筛选与配置重读
 
 全局面板筛选资源提供方与全部配置字段（ID、类型、预设、白/黑名单、store/retrieve 的 on/rule/strategy）；轮次、轮次来源、触发状态属于会话面板。筛选均可多选，同一项内满足任一选择，不同项同时满足，清空选择即不限；返回表格保留筛选与滚动位置，徽标统计启用维度；切换会话或重新打开面板时重置。筛选使用含预设覆盖的生效配置；复杂值通过已命名选项或组合控件选择，按规范值精确匹配，不执行规则。资源提供方按 `adapterId` 路由到来源，属于管理接入信息，不是用户内容字段，也不是 `preset`。`preset` 持续覆盖其明确提供的配置字段。
 
-「重新读取管理配置」读取服务端已保存的规则与预设。未改动显示“已是最新”；改动必须带更高配置版本，通过校验后才生效。失败保留原有效配置，不自动改版本。查询范围及提供方返回数量可帮助区分没有资源、筛选无匹配和来源读取失败。全局技能注册表不会自动汇总会话目录，安装提供方也不代表此范围已有技能。
+「重新读取管理配置」读取服务端已保存的规则与预设。未改动显示“已是最新”；改动必须带更高配置版本，通过校验后才生效。失败保留原有效配置，不自动改版本。配置与选项目录分别完成加载；读取请求超过 30 秒显示读取超时与重试入口，不把超时判为来源已卸载，保存请求不套用此超时。查询范围及提供方返回数量可帮助区分没有资源、筛选无匹配和来源读取失败。全局技能注册表不会自动汇总会话目录，安装提供方也不代表此范围已有技能。
 
 ### 本地配置编辑
 

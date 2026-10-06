@@ -27,3 +27,5 @@ test('session read readiness, absence and failed reads have distinct HTTP errors
   assert.equal(response.statusCode,status);assert.equal(response.body.error.code,code)
  }
 })
+
+test('preset reads and atomic mutations retain Host and same-origin fences',async()=>{let writes=0;const manager={configuration:{document:{revision:7}},presetLibrary:()=>[{id:'a'}],validatePresets:async bundle=>({valid:true,presets:bundle.presets}),savePresets:async args=>{writes++;return {revision:8,presets:args.bundle.presets}}};const list=await call(manager,{method:'GET',url:'/api/dsh-memory-manager/presets'});assert.equal(list.body.revision,7);assert.equal(list.body.format,'dsh-memory-manager-presets');for(const endpoint of ['validate-presets','save-presets'])assert.equal((await call(manager,{url:'/api/dsh-memory-manager/'+endpoint})).statusCode,403);assert.equal(writes,0);const response=await call(manager,{url:'/api/dsh-memory-manager/save-presets',headers:{origin:'http://localhost:1','content-type':'application/json','x-dsh-memory-manager':'1'},body:{bundle:{presets:[{id:'a'}]},expectedRevision:7,replace:true}});assert.equal(response.body.revision,8);assert.equal(writes,1)})

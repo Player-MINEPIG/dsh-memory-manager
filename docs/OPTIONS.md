@@ -32,7 +32,7 @@ A trusted adapter may expose this JSON-only `optionCatalog`:
 }
 ```
 
-`mode` is `store` or `retrieve`. `onSelection` is `single` or `multiple`. `strategySelection` is `fixed` (select a complete source-owned chain) or `chain` (compose registered generic operations). Missing mode support is unknown, not supported. Labels/descriptions are presentation text, never executable content. `events` on a strategy lists compatible event IDs. Preset definitions must omit identity/provider/content fields. They do not supply a scope or change management ownership implicitly. A source should omit whitelist/blacklist from a reusable preset when the user must choose scope locally.
+`mode` is `store` or `retrieve`. `onSelection` is `single` or `multiple`. `strategySelection` is `fixed` (select a complete source-owned chain) or `chain` (compose registered generic operations). Missing mode support is unknown, not supported. Labels/descriptions are presentation text, never executable content. `events` on a strategy lists compatible event IDs. Preset definitions must omit identity/provider/content fields. They do not supply a scope or change management ownership implicitly. Reusable presets accept only type/store/retrieve and must omit whitelist/blacklist. The user selects resource scope locally.
 
 For source-owned execution, declare `strategyOwner: 'source'` and retain source `validateConfig` plus its actual ordered execution. Optional `registerUsage(handler)` follows the existing MVU decision contract: source sends `{id,on,scope,event,managementMode}`; handler returns `undefined` for native management, otherwise `{enabled,reason,configRevision,strategy,checkCurrent}`. The source must validate every returned synchronous lease after its final await, immediately before committing/using the managed decision. This policy does not replace source permissions, CAS, resource selection or idempotency. Unsupported events fail closed. Disposal must unregister usage and resource access together.
 
@@ -99,7 +99,7 @@ manager 一次保留 header 快照，默认最多 2000 条、1 MB，获取与每
 | `builtin:worldbook-retrieve` | 新世界书服务：type=world-book；请求前激活并输出 |
 | `builtin:prompt-template-retrieve` | 新模板服务：type=prompt-template；请求前只读展开并输出 |
 
-预设持续覆盖其明确提供的本地字段，未提供字段继续取本地值；名单、规则、链为整体替换。内置预设不含白/黑名单，不自动启用资源或改变 native/managed。用户 `presets` 中同 ID 的定义优先于内置版本。来源 `optionCatalog.presets` 是描述，不能注入新的权威配置；来源可描述上述相同 ID/定义，扩展管理预设须明确写入本地 `presets`。选择引用不会复制定义为本地字段。
+预设持续覆盖其明确提供的本地字段，未提供字段继续取本地值；名单、规则、链为整体替换。内置预设不含白/黑名单，不自动启用资源或改变 native/managed。用户 `presets` 中同 ID 的定义优先于内置版本。来源 `optionCatalog.presets` 可提供多个可编辑默认存取组合；自定义 ID 以 `adapter:<adapterId>:<presetId>` 命名。读取目录不写文件，显式保存资源引用时才将所选默认组合写入本地预设定义；已有受支持内置 ID 保持兼容。编辑默认预设保存为同 ID 的本地覆盖，资源引用持续使用修改后的定义，不复制为本地字段。独立的「存取预设」页提供新建、编辑、导入、导出；格式、严格整批校验和 adapter 扩展见[存取预设](PRESETS.md)。
 
 Skill 的模型贡献需选中 `memory-manager.resources` 装配来源。世界书由 Tavern worldbook 来源执行；模板需选中 `pmp-dsh-tavern/prompt-template`。manager 不重复执行 source-owned 策略。旧 Tavern 世界书 HTTP 桥没有托管能力；服务缺失或固定链不支持时不伪造可用选项。managed 资源还需来源侧明确接管与当前有效 lease；manager 缺失、规则拒绝或配置不可用不能回退 native 放行。来源权限、范围、版本和实际事件仍在执行时验证。
 

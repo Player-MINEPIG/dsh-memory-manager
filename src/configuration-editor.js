@@ -1,5 +1,6 @@
 import {capabilityErrors} from './capabilities.js'
 import {parameterErrors} from './option-schema.js'
+import {presetLibrary} from './preset-library.js'
 import {presetDefinitions} from './builtin-presets.js'
 import {readFile,open,unlink} from 'node:fs/promises'
 import {readFileSync,renameSync} from 'node:fs'
@@ -16,7 +17,7 @@ export function configurationSnapshot(manager,{id,adapterId,sessionId}){
  const doc=manager.configuration.document,local=doc.entries.find(e=>e.id===id)??null
  if(local&&(local.sourceAdapterId??local.adapterId)!==adapterId)fail('OWNERSHIP_CONFLICT','该资源已绑定其他提供方。')
  const {checkCurrent,...policy}=manager.getConfig(id,{adapterId,scope:sessionId?{sessionId}:{}})
- return {id,adapterId,revision:doc.revision,local:clone(local),...policy,presets:clone(presetDefinitions(doc)),configError:manager.configuration.error,sourceAvailable:manager.isAdapterEnabled(adapterId)}
+ return {id,adapterId,revision:doc.revision,local:clone(local),...policy,presets:Object.fromEntries(presetLibrary(manager).map(p=>[p.id,clone(p.configuration)])),configError:manager.configuration.error,sourceAvailable:manager.isAdapterEnabled(adapterId)}
 }
 function proposedDocument(manager,{id,adapterId,entry,expectedRevision}){
  identity({id,adapterId,entry})
@@ -27,7 +28,9 @@ function proposedDocument(manager,{id,adapterId,entry,expectedRevision}){
  const existing=doc.entries.find(e=>e.id===id)
  if(existing&&(existing.sourceAdapterId??existing.adapterId)!==adapterId)fail('OWNERSHIP_CONFLICT','该资源已绑定其他提供方。')
  const entries=existing?doc.entries.map(e=>e.id===id?clone(entry):e):[...doc.entries,clone(entry)]
- return validateDocument({...clone(doc),entries})
+ const presets=clone(doc.presets),presetMetadata=clone(doc.presetMetadata??{}),defaultPreset=presetLibrary(manager).find(p=>p.id===entry.preset)
+ if(defaultPreset&&!Object.hasOwn(presetDefinitions(doc),entry.preset)){presets[defaultPreset.id]=clone(defaultPreset.configuration);presetMetadata[defaultPreset.id]={label:defaultPreset.label,description:defaultPreset.description,adapterIds:defaultPreset.adapterIds}}
+ return validateDocument({...clone(doc),entries,presets,...(Object.keys(presetMetadata).length?{presetMetadata}:{})})
 }
 function conditionReferences(rule){
  if(typeof rule==='string')return [{id:rule,params:{}}]

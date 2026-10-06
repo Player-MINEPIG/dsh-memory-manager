@@ -3,6 +3,7 @@ import { dirname } from 'node:path'
 import { Configuration,clone,fail,safe,effective } from './config.js'
 import {configurationFilterFields,filterValues,validateFilters,matchesConfigurationFilters} from './filters.js'
 import {optionCatalog,validateAdapterCatalog} from './option-catalog.js'
+import {presetLibrary,validatePresets,savePresets} from './preset-library.js'
 import {configurationSnapshot,validateEntry,saveEntry} from './configuration-editor.js'
 import {ScopeDirectory} from './scope-directory.js'
 import {adapterCatalog,setAdapterEnabled} from './adapter-controls.js'
@@ -80,6 +81,9 @@ export class MemoryManager {
       this.pending=this.pending.catch(()=>{}).then(async()=>{await mkdir(dirname(this.journalPath),{recursive:true});const temp=`${this.journalPath}.tmp`;await writeFile(temp,data,{mode:0o600});await rename(temp,this.journalPath)}).catch(e=>{this.diagnostics.push({code:'JOURNAL_WRITE_FAILED',message:e.message})})
     }
   }
+  presetLibrary(){return presetLibrary(this)}
+  validatePresets(bundle){return validatePresets(this,bundle).then(({presets})=>({valid:true,presets,revision:this.configuration.document.revision}))}
+  savePresets(args){return savePresets(this,args)}
   optionCatalog(args) {return optionCatalog(this,args)}
   configurationSnapshot(args) {return configurationSnapshot(this,args)}
   validateEntry(args) {return validateEntry(this,args)}

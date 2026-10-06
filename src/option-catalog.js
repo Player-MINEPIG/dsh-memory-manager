@@ -1,7 +1,8 @@
+import {strictPreset,presetLibrary} from './preset-library.js'
 import {capabilityErrors} from './capabilities.js'
 import {createHash} from 'node:crypto'
-import {clone,safe,fail,validateDocument} from './config.js'
-import {builtinPresets,presetDefinitions} from './builtin-presets.js'
+import {clone,safe,fail} from './config.js'
+import {builtinPresets} from './builtin-presets.js'
 import {validateParameterSchema} from './option-schema.js'
 import {canonical} from './filters.js'
 export function normalizeRegistration(id,metadata={}){
@@ -25,7 +26,7 @@ export function validateAdapterCatalog(catalog){
    const allowed=['id','label','description',...({types:[],events:['mode'],strategies:['mode','events','value'],presets:['configuration']}[key])]
    if(!option||Object.keys(option).some(k=>!allowed.includes(k))||option.description!==undefined&&typeof option.description!=='string')fail('INVALID_OPTION_SCHEMA','选项包含不支持的字段。')
    if(typeof option.id!=='string'||!option.id||seen.has(option.id)||typeof option.label!=='string')fail('INVALID_OPTION_SCHEMA','选项需要唯一 ID 与名称。');seen.add(option.id)
-   if(key==='presets')validateDocument({schemaVersion:1,revision:1,entries:[],presets:{[option.id]:option.configuration}})
+   if(key==='presets')strictPreset({...option,adapterIds:['catalog-adapter']})
    if(['events','strategies'].includes(key)&&!['store','retrieve'].includes(option.mode))fail('INVALID_OPTION_SCHEMA','选项 mode 无效。')
    if(key==='strategies'&&(!Array.isArray(option.events)||option.events.some(id=>typeof id!=='string'||!(catalog.events??[]).some(event=>event.id===id&&event.mode===option.mode))||!Array.isArray(option.value)||option.value.some(v=>typeof v.operation!=='string')))fail('INVALID_OPTION_SCHEMA','策略需要事件与真实操作链。')
   }
@@ -35,13 +36,13 @@ export function validateAdapterCatalog(catalog){
 }
 const at=(object,path)=>path.split('.').reduce((v,k)=>v?.[k],object)
 export function optionCatalog(manager,{adapterId,id,sessionId}={}){
- const adapters=[...manager.adapters.values()],selected=manager.adapters.get(adapterId),definitions=presetDefinitions(manager.configuration.document)
+ const adapters=[...manager.adapters.values()],selected=manager.adapters.get(adapterId)
  const available=(adapterIds=[])=>!adapterId||!adapterIds.length||adapterIds.includes(adapterId)
  const conditions=[...(manager.usage?.conditions??[])].map(([id,fn])=>({...clone(fn.option??normalizeRegistration(id)),available:available(fn.option?.adapterIds)}))
  const operations=[...(manager.usage?.operations??[])].map(([id,op])=>({...clone(op.option??normalizeRegistration(id)),readOnly:op.readOnly,available:available(op.option?.adapterIds)}))
  const providerStatus=(ids,sourceRequired=false)=>{const matching=ids.length?adapters.filter(a=>ids.includes(a.id)):adapters;if(!matching.length)return {available:false,reason:'提供方未接入。'};if(!available(ids))return {available:false,reason:'该选项属于其他资源提供方。'};if(sourceRequired&&!matching.some(a=>a.strategyOwner==='source'&&a.registerUsage))return {available:false,reason:'当前来源仅支持原生只读查看，未提供管理策略接口。'};return {available:true}}
  const compatible=configuration=>adapters.filter(a=>(configuration.type===undefined?[undefined,...(a.optionCatalog?.types??[]).map(t=>t.id)]:[configuration.type]).some(type=>!capabilityErrors(a,{...configuration,type},manager.usage?.conditions??new Map(),manager.usage?.operations??new Map(),{catalogStrategies:true}).length)).map(a=>a.id)
- const presets=Object.entries(definitions).map(([key,configuration])=>{const local=Object.hasOwn(manager.configuration.document.presets,key),meta=local?{}:builtinPresets[key];const declared=meta.adapterIds??[],ids=compatible(configuration).filter(id=>!declared.length||declared.includes(id));return {id:key,label:meta.label??key,description:meta.description??'',adapterIds:ids.length?ids:declared,configuration:clone(configuration),origin:local?'local':'builtin',...(ids.length?providerStatus(ids,meta.requiresSourcePolicy):{available:false,reason:'当前没有兼容此预设的已注册来源与能力。'})}})
+ const presets=presetLibrary(manager).map(item=>{const {id:key,configuration}=item,meta=item;const declared=meta.adapterIds??[],ids=compatible(configuration).filter(id=>!declared.length||declared.includes(id));return {id:key,label:meta.label??key,description:meta.description??'',adapterIds:ids.length?ids:declared,configuration:clone(configuration),origin:item.origin,...(ids.length?providerStatus(ids,meta.requiresSourcePolicy??builtinPresets[key]?.requiresSourcePolicy):{available:false,reason:'当前没有兼容此预设的已注册来源与能力。'})}})
  const fields={type:[],preset:presets.map(p=>({...p,value:p.id})),whitelist:[],blacklist:[],'store.on':[],'retrieve.on':[],'store.rule':[],'retrieve.rule':[],'store.strategy':[],'retrieve.strategy':[]}
  const append=(field,option)=>{const index=fields[field].findIndex(o=>canonical(o.value)===canonical(option.value)&&canonical(o.adapterIds)===canonical(option.adapterIds));if(index<0)fields[field].push(option);else fields[field][index].presetIds=[...new Set([...fields[field][index].presetIds,...option.presetIds])]}
  for(const adapter of adapters){

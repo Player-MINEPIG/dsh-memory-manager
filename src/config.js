@@ -65,12 +65,19 @@ export function validateDocument(doc) {
       }
     }
   }
+  if(doc.presetMetadata!==undefined){
+    if(!object(doc.presetMetadata))fail('INVALID_CONFIG','Preset metadata must be an object')
+    for(const [id,meta] of Object.entries(doc.presetMetadata)){
+      if(!Object.hasOwn(doc.presets,id)||!object(meta)||Object.keys(meta).some(k=>!['label','description','adapterIds'].includes(k))||typeof meta.label!=='string'||!meta.label.trim()||meta.description!==undefined&&typeof meta.description!=='string'||!Array.isArray(meta.adapterIds)||!meta.adapterIds.length||meta.adapterIds.some(v=>typeof v!=='string'||!v))fail('INVALID_CONFIG','Invalid preset metadata')
+    }
+  }
   const ids=new Set()
   for (const e of doc.entries) {
     validateFields(e)
     if (typeof e.id!=='string'||!e.id||typeof e.adapterId!=='string'||!e.adapterId||ids.has(e.id)) fail('INVALID_CONFIG','Entry requires unique id and adapterId')
     ids.add(e.id)
     if (e.preset != null && (typeof e.preset!=='string'||!Object.hasOwn(presetDefinitions(doc),e.preset))) fail('INVALID_CONFIG',`Missing preset: ${e.preset}`)
+    if(e.preset&&doc.presetMetadata?.[e.preset]&&!doc.presetMetadata[e.preset].adapterIds.includes(e.adapterId))fail('INVALID_CONFIG','Preset does not support this entry adapter')
     effective(doc,e.id)
   }
   return clone(doc)
