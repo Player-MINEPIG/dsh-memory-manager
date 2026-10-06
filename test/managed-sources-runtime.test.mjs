@@ -21,7 +21,8 @@ test('real Tavern source catalog → builtin reference → validation/save → m
  const source=service.templates,id='prompt-template:self',adapterId=source.id,scope={sessionId:'s'},context={sessionId:'s',turn:1,step:0,preview:true,assets:{},nativeMessages:[],inputIds:[]}
  assert.equal((await source.resolve(context)).blocks[0].text,'SELF:5')
  const row=await manager.read({adapterId,id,scope});await manager.setManagementMode({adapterId,id,scope,mode:'managed',expectedRevision:row.revision,operationId:'own-fixture'})
- assert.equal((await source.resolve(context)).blocks.length,0)
+ assert.equal((await source.resolve(context)).blocks[0].text,'SELF:5')
+ assert.equal(manager.configurationSnapshot({adapterId,id,sessionId:'s'}).sourceDefault.available,true)
  const catalog=manager.optionCatalog({adapterId,id,sessionId:'s'});assert(catalog.presets.find(p=>p.id==='builtin:prompt-template-retrieve').available)
  const entry={id,adapterId,preset:'builtin:prompt-template-retrieve',whitelist:[scope]}
  assert.equal((await manager.validateEntry({id,adapterId,entry,expectedRevision:1,expectedCatalogRevision:catalog.catalogRevision})).valid,true)
@@ -33,10 +34,10 @@ test('real Tavern source catalog → builtin reference → validation/save → m
  await assert.rejects(manager.update({adapterId,id,scope,content:'self',expectedRevision:'stale',operationId:'stale'}),{code:'REVISION_CONFLICT'})
  const configured=manager.getConfig(id).config;const denied={...entry,preset:null,type:'prompt-template',retrieve:{...configured.retrieve,rule:false}}
  await manager.saveEntry({id,adapterId,entry:denied,expectedRevision:2});assert.equal((await source.resolve(context)).blocks.length,0)
- await manager.saveEntry({id,adapterId,entry,expectedRevision:3});const pending=await source.resolve(context);stop();assert.throws(()=>source.validateResolved(context),{code:'SOURCE_POLICY_CHANGED'});assert.equal((await source.resolve(context)).blocks.length,0)
+ await manager.saveEntry({id,adapterId,entry,expectedRevision:3});const pending=await source.resolve(context);stop();assert.throws(()=>source.validateResolved(context),{code:'SOURCE_POLICY_CHANGED'});assert.equal((await source.resolve(context)).blocks[0].text,'SELF:5')
 })
 
-test('native world-book source receipt associates the real request with an unconfigured manager row',{skip:!root&&'Set DSH_MEMORY_SOURCES to Tavern source protocol 1 checkout'},async t=>{
+test('source-owned world-book receipt associates the real request with source defaults',{skip:!root&&'Set DSH_MEMORY_SOURCES to Tavern source protocol 1 checkout'},async t=>{
  const {createMemorySources}=await import(pathToFileURL(join(root,'packages/memory-sources/index.js')))
  const {WorldBookStore}=await import(pathToFileURL(join(root,'packages/world-book-library/src/store.js')))
  const {createWorldBookAdapter}=await import(pathToFileURL(join(root,'packages/tavern-loader/src/world-book-adapter.js')))
@@ -47,9 +48,9 @@ test('native world-book source receipt associates the real request with an uncon
  const store=new WorldBookStore(directory),doc=store.import({entries:{0:{uid:0,constant:true,content:'WORLD_BOOK_REQUEST_PROOF'}}},{name:'Fixture'})
  const session={id:'s',header:{id:'s',version:4,createdAt:'fixture'}}
  const selected={worldBookIds:[doc.id],characterId:null},service=createMemorySources({storageDir:directory,store,getSession:()=>session,getSelection:()=>selected})
- const manager=new MemoryManager({configPath:join(directory,'missing.json')}),usage=new Usage(manager),stop=installManagedSources(manager,service,usage)
+ const manager=await new MemoryManager({configPath:join(directory,'missing.json')}).init({createIfMissing:true}),usage=new Usage(manager),stop=installManagedSources(manager,service,usage)
  t.after(async()=>{stop();service.dispose();await manager.dispose()})
- const id='world-book:'+doc.id,scope={sessionId:'s'},nativeMessages=[{id:'user',role:'user',content:[{type:'text',text:'Hello'}]}]
+ const id='world-book:'+doc.id,adapterId='tavern.world-books',scope={sessionId:'s'},nativeMessages=[{id:'user',role:'user',content:[{type:'text',text:'Hello'}]}]
  const projected=createWorldBookAdapter(store).resolve({selection:{worldBookIds:[doc.id]},requestAssembly:true})
  const {hash}=await import(pathToFileURL(join(root,'packages/memory-sources/policy.js')))
  const assets={loreEntries:projected.loreEntries,worldBookIds:[doc.id],worldBookRevisions:{[doc.id]:hash(doc)}}
@@ -66,18 +67,18 @@ test('native world-book source receipt associates the real request with an uncon
  assert.equal((await read('2')).facts.length,0)
  service.observeRequest({messages:result.messages},session);service.observeRequest({messages:result.messages},session)
  const row=await read('2')
- assert.equal(row.config,null);assert.equal(row.managementMode,'native');assert.equal(row.applied,true);assert.equal(row.status,'past');assert.equal(row.facts.length,1);assert.equal(row.facts[0].requestId,'s:3');assert.equal(row.facts[0].revision,service.worldBooks.read({id}).revision)
+ assert.equal(row.sourceDefault.available,true);assert.equal(row.origins['retrieve.rule'],'source-default');assert.equal(row.managementMode,'managed');assert.equal(row.applied,true);assert.equal(row.status,'past');assert.equal(row.facts.length,1);assert.equal(row.facts[0].requestId,'s:3');assert.equal(row.facts[0].revision,service.worldBooks.read({id}).revision)
  assert.equal((await read('1')).facts.length,0);assert.equal((await read('1')).applied,false)
- // Explicit managed mode without a manager configuration skips the candidate;
- // it must report the actual skip, never a fabricated application.
+ // An explicit deny overrides source defaults and reports a skip, not application.
  const before=service.worldBooks.read({id})
  service.worldBooks.setManagementMode({id,mode:'managed',expectedRevision:before.revision,operationId:'managed-fixture'})
+ await manager.saveEntry({id,adapterId,sessionId:'s',entry:{id,adapterId,retrieve:{rule:false}},expectedRevision:1})
  const deniedLogical=await assembleRequestAsync({registry,preset:BUILTINS[0],assets,sessionId:'s',turn:3,step:0,nativeMessages,inputIds:['user']})
  const denied=projectSystemSnapshots(deniedLogical,nativeMessages,undefined,{systemPromptUpdate:'in-history'})
  assert(!JSON.stringify(denied.messages).includes('WORLD_BOOK_REQUEST_PROOF'))
  event.seq=4;event.data={turn:3,step:0,messages:denied.messages,metadata:{owner:'pmp-dsh-tavern',assembly:denied}}
  service.observeRequest({messages:denied.messages},session);service.observeRequest({messages:denied.messages},session)
  const skipped=await read('3'),{resourceStatus,policySkipReasons}=await import('../src/session-rounds.js')
- assert.equal(skipped.facts.length,1);assert.equal(skipped.applied,false);assert.equal(skipped.facts[0].phase,'skipped');assert.equal(skipped.facts[0].reason,'config-unavailable')
- assert.equal(resourceStatus(skipped),'策略跳过');assert.equal(policySkipReasons(skipped),'config-unavailable');assert.equal(skipped.managementMode,'managed');assert.deepEqual(manager.configuration.document.entries,[])
+ assert.equal(skipped.facts.length,1);assert.equal(skipped.applied,false);assert.equal(skipped.facts[0].phase,'skipped');assert.equal(skipped.facts[0].reason,'rule')
+ assert.equal(resourceStatus(skipped),'策略跳过');assert.equal(policySkipReasons(skipped),'rule');assert.equal(skipped.managementMode,'managed');assert.equal(manager.configuration.document.entries.length,1)
 })

@@ -9,7 +9,7 @@ import * as managerPlugin from '../src/index.js'
 import {roundRows,resourceStatus,policySkipReasons} from '../src/session-rounds.js'
 const runtime=process.env.DSH_MEMORY_RUNTIME,tavernRoot=process.env.DSH_MEMORY_TAVERN
 
-test('native world-book request receipts reach the manager without management configuration',{skip:!runtime||!tavernRoot,timeout:30000},async()=>{
+test('source-owned world-book receipts reach the manager with defaults and explicit denial',{skip:!runtime||!tavernRoot,timeout:30000},async()=>{
  const require=createRequire(join(resolve(runtime),'package.json')),load=name=>import(pathToFileURL(require.resolve(name)).href)
  const {Context}=await load('@deepseek-ai/cordis'),{SystemPrompt}=await load('@deepseek-ai/dsh-system-prompt'),llm=await load('@deepseek-ai/dsh-llm')
  const tavern=await import(pathToFileURL(join(tavernRoot,'packages/tavern-loader/src/index.js')).href)
@@ -32,27 +32,28 @@ test('native world-book request receipts reach the manager without management co
   store.sessionSelections.set(agent.id,{characterCardId:'fixture',worldBookIds:[book.id]});store.assemblyPresets.apply(agent.id,'builtin-st')
   const ids=['world-book:character:fixture:embedded-world-book','world-book:'+book.id]
   const query=()=>ctx.dshMemoryManager.query({scope:{sessionId:agent.id}})
-  assert((await query()).rows.filter(row=>ids.includes(row.id)).every(row=>!row.config&&!row.applied&&row.facts.length===0))
+  assert((await query()).rows.filter(row=>ids.includes(row.id)).every(row=>row.sourceDefault.available&&!row.applied&&row.facts.length===0))
   for(const input of ['ONE','TWO']){
    agent.followup(llm.createUserMessage({content:[{type:'text',text:input}],source:{kind:'user'}}));await agent.whenIdle();assert.deepEqual(errors,[])
    const texts=requests.at(-1).flatMap(message=>message.content.filter(block=>block.type==='text').map(block=>block.text)).join('\n')
    assert.match(texts,/EMBEDDED_WORLD_BOOK_BODY/);assert.match(texts,/STANDALONE_WORLD_BOOK_BODY/)
    const event=agent.session.snapshotEvents().findLast(event=>event.type==='request/assembly'),rows=roundRows(await query(),String(event.data.turn))
-   for(const id of ids){const row=rows.find(row=>row.id===id);assert(row,id);assert.equal(row.managementMode,'native');assert.equal(row.config,null);assert.equal(row.applied,true,`${id}: ${JSON.stringify(event.data.metadata.assembly.diagnostics)}`);assert.equal(row.facts.filter(fact=>fact.phase==='applied').length,1);assert.equal(row.facts[0].requestId,`${agent.id}:${event.seq}`)}
+   for(const id of ids){const row=rows.find(row=>row.id===id);assert(row,id);assert.equal(row.managementMode,'managed');assert.equal(row.origins['retrieve.rule'],'source-default');assert.equal(row.applied,true,`${id}: ${JSON.stringify(event.data.metadata.assembly.diagnostics)}`);assert.equal(row.facts.filter(fact=>fact.phase==='applied').length,1);assert.equal(row.facts[0].requestId,`${agent.id}:${event.seq}`)}
    await ctx.dshMemoryManager.pending
    const journal=JSON.parse(await readFile(join(dir,'observations.json'),'utf8'))
    for(const id of ids){const row=rows.find(row=>row.id===id);assert.deepEqual(journal.filter(fact=>fact.id===id&&fact.adapterId===row.adapterId&&fact.requestId===`${agent.id}:${event.seq}`&&fact.phase==='applied'),row.facts.filter(fact=>fact.phase==='applied'))}
   }
   const source=ctx.tavernMemorySources.worldBooks,id='world-book:'+book.id,before=source.read({id})
   source.setManagementMode({id,mode:'managed',expectedRevision:before.revision,operationId:'explicit-managed-fixture'})
-  agent.followup(llm.createUserMessage({content:[{type:'text',text:'MANAGED WITHOUT CONFIG'}],source:{kind:'user'}}));await agent.whenIdle();assert.deepEqual(errors,[])
+  await ctx.dshMemoryManager.saveEntry({id,adapterId:'tavern.world-books',sessionId:agent.id,entry:{id,adapterId:'tavern.world-books',retrieve:{rule:false}},expectedRevision:1})
+  agent.followup(llm.createUserMessage({content:[{type:'text',text:'MANAGED DENY'}],source:{kind:'user'}}));await agent.whenIdle();assert.deepEqual(errors,[])
   const event=agent.session.snapshotEvents().findLast(event=>event.type==='request/assembly'),skipped=roundRows(await query(),String(event.data.turn)).find(row=>row.id===id)
-  assert.equal(skipped.applied,false);assert.equal(resourceStatus(skipped),'策略跳过');assert.equal(policySkipReasons(skipped),'config-unavailable')
-  assert.equal(skipped.facts.filter(fact=>fact.phase==='skipped').length,1);assert.equal(skipped.managementMode,'managed');assert.equal(skipped.config,null)
+  assert.equal(skipped.applied,false);assert.equal(resourceStatus(skipped),'策略跳过');assert.equal(policySkipReasons(skipped),'rule')
+  assert.equal(skipped.facts.filter(fact=>fact.phase==='skipped').length,1);assert.equal(skipped.managementMode,'managed');assert.equal(skipped.config.retrieve.rule,false)
   assert.equal(skipped.facts[0].requestId,`${agent.id}:${event.seq}`)
   await ctx.dshMemoryManager.pending
   const journal=JSON.parse(await readFile(join(dir,'observations.json'),'utf8'))
   assert.deepEqual(journal.filter(fact=>fact.id===id&&fact.adapterId===skipped.adapterId&&fact.requestId===`${agent.id}:${event.seq}`&&fact.phase==='skipped'),skipped.facts)
-  assert.deepEqual(JSON.parse(await readFile(configPath,'utf8')).entries,[])
+  assert.equal(JSON.parse(await readFile(configPath,'utf8')).entries.length,1)
  }finally{await ctx.fiber.dispose();await rm(dir,{recursive:true,force:true})}
 })

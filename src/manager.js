@@ -84,7 +84,14 @@ export class MemoryManager {
   configurationSnapshot(args) {return configurationSnapshot(this,args)}
   validateEntry(args) {return validateEntry(this,args)}
   saveEntry(args) {return saveEntry(this,args)}
-  async query({scope={},turn,turnKind,status,adapterId,filters={},signal}={}) {
+  query(args={}) {
+    return this.withScopeRead({ ...args.scope, signal: args.signal }, () => this.#queryLoaded(args))
+  }
+  withScopeRead(scope, callback) {
+    return scope?.sessionId && this.boundMemorySource?.withSessionRead
+      ? this.boundMemorySource.withSessionRead(scope, callback) : callback()
+  }
+  async #queryLoaded({scope={},turn,turnKind,status,adapterId,filters={},signal}={}) {
     if(Object.hasOwn(scope,'sessionId')&&(typeof scope.sessionId!=='string'||!scope.sessionId))fail('INVALID_SCOPE','会话目录需要非空的稳定 session ID。')
     validateFilters(filters)
     const selected=value=>(Array.isArray(value)?value:[value]).filter(v=>v!==undefined&&v!==null&&v!=='').map(String)
