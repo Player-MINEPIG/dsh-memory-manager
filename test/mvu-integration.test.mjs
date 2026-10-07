@@ -1,3 +1,4 @@
+import assembler from 'dsh-prompt-assembler/plugin'
 // Fixed-ID fixtures deliberately test shared-state policy/CAS; production defaults remain session instances.
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
@@ -54,37 +55,35 @@ async function cardFixture(t){
  const policy={id:'mvu:card',adapterId,type:'mvu-state',whitelist:[{sessionId:'s'}],blacklist:[],store:{on:'card_variable_update',rule:{condition:{id:'mvu_card_write_cause',params:{cause:'user-interaction'}}},strategy:cardStrategy}}
  return {...state,service,scope,policy,grant:()=>{granted=true},revoke:()=>{granted=false},leave:()=>{active=false},bind:()=>service.createCardBinding({scope,grantId:'grant',sourceIdentity})}
 }
-test('real MVU card transaction requires grant and manager policy, exposes source receipts, rejects revoked and unloaded access',{skip:!root},async t=>{
+test('native MVU card writes retain grants, schema and receipts independently of manager rules and unload',{skip:!root},async t=>{
  const f=await cardFixture(t),m=f.manager
  await f.configure([f.policy]);await assert.rejects(f.bind(),{code:'MVU_WRITE_DENIED'})
  f.grant();const {capability}=await f.bind(),request={capability,operation:'patch',value:[{op:'delta',path:'/hp',value:-2}],expectedRevision:2,operationId:'click',cause:'user-interaction'}
- await f.configure([]);await assert.rejects(()=>f.service.cardWrite(request),{code:'MVU_USAGE_DENIED'})
- await f.configure([f.policy]);await assert.rejects(()=>f.service.cardWrite({...request,operationId:'timer',cause:'interval'}),{code:'MVU_USAGE_DENIED'})
+ await f.configure([])
  const result=await f.service.cardWrite(request);assert.equal(result.variables.stat_data.hp,7);assert.equal(result.revision,3)
  assert.deepEqual(await f.service.cardWrite(request),result)
- const applied=m.traces.filter(e=>e.phase==='applied');assert.equal(applied.length,1);assert.equal(applied[0].detail,'state-committed');assert.equal(applied[0].on,'card_variable_update');assert.equal(applied[0].configRevision,m.configuration.document.revision)
- assert(m.traces.some(e=>e.phase==='skipped'&&e.cause==='interval'))
+ const applied=m.traces.filter(e=>e.phase==='applied');assert.equal(applied.length,1);assert.equal(applied[0].detail,'state-committed');assert.equal(applied[0].on,'card_variable_update');assert.equal(applied[0].configRevision,null)
  const replacement={capability,operation:'replace',value:{stat_data:{hp:-1}},expectedRevision:3,operationId:'replace',cause:'user-interaction'}
  await assert.rejects(()=>f.service.cardWrite(replacement),{code:'MVU_SCHEMA'})
  assert.equal((await f.service.read({id:'mvu:card',scope:{sessionId:'s'}})).revision,3)
  const replaced=await f.service.cardWrite({...replacement,value:{stat_data:{hp:6}}});assert.equal(replaced.variables.stat_data.hp,6);assert.ok(replaced.variables.mvu_schema);assert.equal(replaced.revision,4)
  assert.equal(m.traces.filter(e=>e.phase==='applied').length,2)
- const historical=await m.read({adapterId,id:'mvu:card',scope:f.scope});assert.equal(historical.historical,true);assert.equal(historical.revision,4);assert.equal(historical.currentRevision,4)
+ const historical=await m.read({adapterId,id:'mvu:card',scope:f.scope});assert.equal(historical.historical,true);assert.equal(historical.revision,4)
  await assert.rejects(()=>m.update({adapterId,id:'mvu:card',scope:f.scope,content:historical.content,expectedRevision:4,operationId:'history-edit'}),{code:'MVU_SCOPE'})
  f.revoke();await assert.rejects(()=>f.service.cardWrite({...request,expectedRevision:4,operationId:'revoked'}),{code:'MVU_WRITE_DENIED'})
- f.grant();f.dispose();await assert.rejects(()=>f.service.cardWrite({...request,expectedRevision:4,operationId:'manager-removed'}),{code:'MVU_USAGE_DENIED'})
- assert.equal((await f.service.read({id:'mvu:card',scope:{sessionId:'s'}})).content.stat_data.hp,6)
+ f.grant();f.dispose()
+ const native=await f.service.cardWrite({...request,expectedRevision:4,operationId:'manager-removed'});assert.equal(native.variables.stat_data.hp,4)
+ assert.equal(m.traces.filter(e=>e.phase==='applied').length,2,'unloaded observer must not collect new native facts')
 })
-test('real source cancels writes when manager unloads or write grant changes during awaited policy',{skip:!root},async t=>{
+test('native card transaction rechecks grants and cancellation while manager unload does not revoke a source grant',{skip:!root},async t=>{
  for(const action of ['unload','revoke','cancel','final-revoke'])await t.test(action,async sub=>{
   const f=await cardFixture(sub);f.grant();const {capability}=await f.bind()
-  if(action==='final-revoke'){const resolveScope=f.service.resolveScope;let calls=0;f.service.resolveScope=async scope=>{const evidence=await resolveScope(scope);if(++calls===2)f.revoke();return evidence}}
-  let enter,release;const entered=new Promise(r=>enter=r)
-  f.usage.registerCondition({id:'await-review',test:async()=>{enter();await new Promise(r=>release=r);return true}})
-  f.policy.store.rule='await-review';await f.configure([f.policy]);const controller=new AbortController()
-  const pending=f.service.cardWrite({capability,operation:'patch',value:[{op:'delta',path:'/hp',value:-2}],expectedRevision:2,operationId:'pending',cause:'script',signal:controller.signal})
-  await entered;if(action==='unload')f.dispose();else if(action==='revoke')f.revoke();else if(action==='cancel')controller.abort();release();await assert.rejects(()=>pending)
-  assert.equal((await f.service.read({id:'mvu:card',scope:{sessionId:'s'}})).content.stat_data.hp,9);assert(!f.manager.traces.some(e=>e.phase==='applied'))
+  let enter,release,calls=0;const entered=new Promise(r=>enter=r),original=f.service.resolveScope
+  f.service.resolveScope=async scope=>{const evidence=await original(scope);if(++calls===2){enter();await new Promise(r=>release=r);if(action==='final-revoke')f.revoke()}return evidence}
+  const controller=new AbortController(),pending=f.service.cardWrite({capability,operation:'patch',value:[{op:'delta',path:'/hp',value:-2}],expectedRevision:2,operationId:'pending',cause:'script',signal:controller.signal})
+  await entered;if(action==='unload')f.dispose();else if(action==='revoke')f.revoke();else if(action==='cancel')controller.abort();release()
+  if(action==='unload'){assert.equal((await pending).variables.stat_data.hp,7)}else{await assert.rejects(pending);assert.equal((await f.service.read({id:'mvu:card',scope:{sessionId:'s'}})).content.stat_data.hp,9)}
+  assert(!f.manager.traces.some(e=>e.phase==='applied'))
  })
 })
 
@@ -99,6 +98,7 @@ test('real DSH request and durable MVU reply pass through actual manager usage a
   ctx.on('agent/error',e=>errors.push(e.error))
   class Provider extends llm.LlmAdapter{async resolveModel(provider,id){return {provider,id,name:id,systemPromptUpdate:'in-history'}}async *stream(request){requests.push(structuredClone(request.messages));const text="_.add('hp', -5);";yield{type:'block-start',index:0,blockType:'text'};yield{type:'text-delta',index:0,text};yield{type:'block-end',index:0,block:{type:'text',text}};yield{type:'finish',reason:{kind:'stop'}}}}
   ctx.llm.registerAdapter(['test'],new Provider())
+  await ctx.plugin(assembler,{storageDir:join(dir,'assembler')})
   await ctx.plugin({name:tavern.name,inject:tavern.inject,apply(c){store=tavern.apply(c,{storageDir:join(dir,'tavern'),mvu:{resources:[{id:'mvu:host',sharing:'shared',sessionIds:['*'],managementMode:'managed',initial:{stat_data:{hp:100}}}]}})}})
   const entry={id:'mvu:host',adapterId,type:'mvu-state',whitelist:[{sessionId:'mvu-host'}],blacklist:[],store:{on:'assistant_message_committed',rule:'contains_mvu_update',strategy:[{operation:'parse_mvu_update'},{operation:'validate_update'},{operation:'apply_update'}]},retrieve:{on:'before_model_request',rule:true,strategy:[{operation:'read_content'},{operation:'render_state_and_update_instructions'},{operation:'provide_to_model'}]}}
   await writeFile(join(dir,'config.json'),JSON.stringify({schemaVersion:1,revision:1,entries:[entry],presets:{}}));const managerPlugin=ctx.plugin(plugin,{storageDir:dir});await managerPlugin
@@ -110,46 +110,25 @@ test('real DSH request and durable MVU reply pass through actual manager usage a
   assert(m.traces.some(f=>f.phase==='applied'&&f.detail==='dsh-request-observed'&&f.revision===0))
   assert(m.traces.some(f=>f.phase==='applied'&&f.detail==='state-committed'&&f.revision===1))
   await managerPlugin.dispose();await turn('TWO')
-  assert(!requests.at(-1).some(m=>m.content.some(b=>b.text?.startsWith('{"hp":95}'))))
-  assert.equal((await service.read({id:'mvu:host',scope:{sessionId:agent.id}})).content.stat_data.hp,95)
+  assert(requests.at(-1).some(m=>m.content.some(b=>b.text?.startsWith('{"hp":95}'))))
+  assert.equal((await service.read({id:'mvu:host',scope:{sessionId:agent.id}})).content.stat_data.hp,90)
   assert(agent.session.deriveMessages().some(m=>m.content?.some(b=>b.text==='ONE')))
  }finally{await ctx.fiber.dispose();await rm(dir,{recursive:true,force:true})}
 })
 
-test('real MVU cannot commit an old manager permit after actual config reload during the final source await',{skip:!root},async t=>{
- for(const phase of ['policy-await','final-scope-await'])await t.test(phase,async sub=>{
-  const f=await cardFixture(sub);f.grant();const {capability}=await f.bind()
-  let enter,release;const entered=new Promise(r=>enter=r)
-  if(phase==='policy-await'){
-   f.usage.registerCondition({id:'reload-window',test:async()=>{enter();await new Promise(r=>release=r);return true}});f.policy.store.rule='reload-window'
-  }else{
-   const original=f.service.resolveScope;let calls=0
-   f.service.resolveScope=async scope=>{const evidence=await original(scope);if(++calls===2){enter();await new Promise(r=>release=r)}return evidence}
-  }
-  await f.configure([f.policy])
-  const before=await f.service.read({id:'mvu:card',scope:{sessionId:'s'}})
-  const pending=f.service.cardWrite({capability,operation:'patch',value:[{op:'delta',path:'/hp',value:-2}],expectedRevision:before.revision,operationId:'reload-race',cause:'user-interaction'})
+test('current source model reads reject config reload and same-function condition registration during awaited decisions',{skip:!root},async t=>{
+ for(const action of ['reload','condition-aba'])await t.test(action,async sub=>{
+  const f=await cardFixture(sub);f.service.capturePromptScope=()=>()=>true
+  let enter,release;const entered=new Promise(r=>enter=r),test=async()=>{enter();await new Promise(r=>release=r);return true}
+  const remove=f.usage.registerCondition({id:'read-gate',test})
+  const policy={id:'mvu:card',adapterId,type:'mvu-state',whitelist:[{sessionId:'s'}],retrieve:{on:'before_model_request',rule:'read-gate',strategy:[{operation:'read_content'},{operation:'render_state_and_update_instructions'},{operation:'provide_to_model'}]}}
+  await f.configure([policy])
+  const pending=f.service.resolveRequest({sessionId:'s',preview:true})
   await entered
-  // Real file reload through Configuration, with the same registered usage handler.
-  const deny=structuredClone(f.policy);deny.store.rule=false;await f.configure([deny]);release()
-  await assert.rejects(()=>pending)
-  const after=await f.service.read({id:'mvu:card',scope:{sessionId:'s'}})
-  assert.equal(after.revision,before.revision);assert.deepEqual(after.content,before.content)
+  if(action==='reload'){await f.configure([{...policy,retrieve:{...policy.retrieve,rule:false}}])}else{remove();f.usage.registerCondition({id:'read-gate',test})}
+  release();const result=await pending;assert.equal(result.blocks.length,0)
   assert(!f.manager.traces.some(e=>e.phase==='applied'))
  })
-})
-
-test('real MVU rejects a revoked condition lease after same-function re-registration in final scope await',{skip:!root},async t=>{
- const f=await cardFixture(t);f.grant();const {capability}=await f.bind(),sameFunction=()=>true
- const remove=f.usage.registerCondition({id:'condition-generation',test:sameFunction});f.policy.store.rule='condition-generation';await f.configure([f.policy])
- let enter,release,calls=0;const entered=new Promise(r=>enter=r),original=f.service.resolveScope
- f.service.resolveScope=async scope=>{const evidence=await original(scope);if(++calls===2){enter();await new Promise(r=>release=r)}return evidence}
- const before=await f.service.read({id:'mvu:card',scope:{sessionId:'s'}})
- const pending=f.service.cardWrite({capability,operation:'patch',value:[{op:'delta',path:'/hp',value:-2}],expectedRevision:before.revision,operationId:'condition-aba',cause:'user-interaction'})
- await entered;remove();f.usage.registerCondition({id:'condition-generation',test:sameFunction});release()
- await assert.rejects(()=>pending)
- const after=await f.service.read({id:'mvu:card',scope:{sessionId:'s'}})
- assert.equal(after.revision,before.revision);assert.deepEqual(after.content,before.content);assert(!f.manager.traces.some(e=>e.phase==='applied'))
 })
 
 test('actual MVU initial Host binding retains manager policy, shared state and first-turn invalidation',{skip:!root},async t=>{
@@ -169,20 +148,20 @@ test('actual MVU initial Host binding retains manager policy, shared state and f
  const f=await setupManager(t,service),policy={id:'mvu:initial',adapterId,type:'mvu-state',whitelist:[{sessionId:'s'}],blacklist:[],store:{on:'card_variable_update',rule:{condition:{id:'mvu_card_write_cause',params:{cause:'user-interaction'}}},strategy:cardStrategy}}
  let observedScope;f.usage.registerCondition({id:'initial-scope',test:e=>{observedScope=e.scope;return e.scope.mode==='initial'}});policy.store.rule={all:[policy.store.rule,'initial-scope']};await f.configure([policy])
  const {capability}=await service.createCardBinding({scope,grantId:'synthetic',sourceIdentity}),request={capability,operation:'replace',value:{stat_data:{hp:7}},expectedRevision:0,operationId:'initial-write',cause:'user-interaction'}
- const result=await service.cardWrite(request);assert.equal(result.variables.stat_data.hp,7);assert.deepEqual(observedScope,{...scope,authority:'local'})
+ const result=await service.cardWrite(request);assert.equal(result.variables.stat_data.hp,7);assert.equal(observedScope,undefined,'native initial writes do not invoke manager card policies')
  assert.equal((await f.manager.read({adapterId,id:'mvu:initial',scope:{sessionId:'other'}})).content.stat_data.hp,7)
  assert.equal(f.manager.traces.filter(e=>e.phase==='applied').length,1)
- assert.equal(f.manager.traces.find(e=>e.phase==='applied').configRevision,f.manager.configuration.document.revision)
+ assert.equal(f.manager.traces.find(e=>e.phase==='applied').configRevision,null)
  assert.deepEqual(await service.cardWrite(request),result)
- await f.configure([]);await assert.rejects(()=>service.cardWrite({...request,expectedRevision:1,operationId:'missing-policy'}))
+ await f.configure([]);const withoutPolicy=await service.cardWrite({...request,expectedRevision:1,operationId:'missing-policy',value:{stat_data:{hp:6}}});assert.equal(withoutPolicy.revision,2);request.expectedRevision=2
  await f.configure([policy])
  // Actual membership/file generations must invalidate the old binding even when identical bytes return.
  assert.equal(memberships.detach('p','s').detached,true)
  workspace.writeFile('catalog.json',catalog,{expectedRevision:workspace.readFile('catalog.json').revision,expectedRevisionPresent:true})
- await assert.rejects(()=>service.cardWrite({...request,expectedRevision:1,operationId:'membership-restored'}),{code:'MVU_READ_ONLY'})
+ await assert.rejects(()=>service.cardWrite({...request,operationId:'membership-restored'}),{code:'MVU_READ_ONLY'})
  const fresh=await service.createCardBinding({scope,grantId:'synthetic',sourceIdentity})
  request.capability=fresh.capability
  events.push({type:'turn/start',seq:4,data:{turn:1}});handlers.get('session/event')(session,events.at(-1))
- await assert.rejects(()=>service.cardWrite({...request,expectedRevision:1,operationId:'after-first-turn'}),{code:'MVU_READ_ONLY'})
- assert.equal((await service.read({id:'mvu:initial',scope:{sessionId:'s'}})).revision,1)
+ await assert.rejects(()=>service.cardWrite({...request,operationId:'after-first-turn'}),{code:'MVU_READ_ONLY'})
+ assert.equal((await service.read({id:'mvu:initial',scope:{sessionId:'s'}})).revision,2)
 })

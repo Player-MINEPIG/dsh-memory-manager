@@ -3,22 +3,22 @@ import assert from 'node:assert/strict'
 import {MemoryManager} from '../src/manager.js'
 import {Usage} from '../src/usage.js'
 import {installMvu} from '../src/adapters/mvu.js'
-const strategy=[{operation:'validate_card_update'},{operation:'apply_card_update'}]
+const strategy=[{operation:'parse_mvu_update'},{operation:'validate_update'},{operation:'apply_update'}]
 function setup(){
  const m=new MemoryManager({configPath:'/unused'}),usage=new Usage(m);let callback,observer,writes=0
- const service={protocolVersion:1,list:async()=>[],read:async()=>null,update:async()=>{writes++},registerUsage:h=>{callback=h;return()=>{}},observe:h=>{observer=h;return()=>{}},validateConfig:c=>{if(c.store?.on!=='card_variable_update')throw Error('unsupported');assert.deepEqual(c.store.strategy,strategy)}}
+ const service={protocolVersion:1,list:async()=>[],read:async()=>null,update:async()=>{writes++},registerUsage:h=>{callback=h;return()=>{}},observe:h=>{observer=h;return()=>{}},validateConfig:c=>{if(c.store?.on!=='assistant_message_committed')throw Error('unsupported');assert.deepEqual(c.store.strategy,strategy)}}
  const dispose=installMvu(m,service,usage)
- const config={id:'mvu:card',adapterId:'tavern.mvu',type:'mvu-state',whitelist:[{sessionId:'bound-session'}],blacklist:[],store:{on:'card_variable_update',rule:{condition:{id:'mvu_card_write_cause',params:{cause:'user-interaction'}}},strategy}}
+ const config={id:'mvu:card',adapterId:'tavern.mvu',type:'mvu-state',whitelist:[{sessionId:'bound-session'}],blacklist:[],store:{on:'assistant_message_committed',rule:'contains_mvu_update',strategy}}
  m.configuration.document={schemaVersion:1,revision:1,presets:{},entries:[config]}
- const request={id:config.id,on:'card_variable_update',managementMode:'managed',scope:{sessionId:'bound-session'},event:{operationId:'card-op',expectedRevision:3,cause:'user-interaction',operation:'patch',sourceIdentity:'approved-source',containsMvuUpdate:true}}
+ const request={id:config.id,on:'assistant_message_committed',managementMode:'managed',scope:{sessionId:'bound-session'},event:{operationId:'card-op',expectedRevision:3,cause:'user-interaction',operation:'patch',sourceIdentity:'approved-source',containsMvuUpdate:true}}
  return {m,usage,dispose,config,request,decide:r=>callback(r),observe:e=>observer(e),writes:()=>writes}
 }
-test('card writes use explicit store timing and source-asserted cause; policy permission never performs a mutation',async()=>{
+test('assistant updates use store timing and source evidence; policy permission never performs a mutation',async()=>{
  const t=setup(),r=await t.decide(t.request);assert.equal(r.enabled,true);assert.deepEqual(r.strategy,strategy);assert.equal(r.configRevision,1)
- assert.equal((await t.decide({...t.request,event:{...t.request.event,cause:'interval'}})).enabled,false)
- assert.equal((await t.decide({...t.request,event:{...t.request.event,cause:'script'}})).enabled,false)
+ assert.equal((await t.decide({...t.request,event:{...t.request.event,containsMvuUpdate:false}})).enabled,false)
+ assert.equal((await t.decide({...t.request,on:'card_variable_update'})).enabled,false)
  assert.equal((await t.decide({...t.request,scope:{sessionId:'different'}})).enabled,false)
- assert.equal((await t.decide({...t.request,on:'assistant_message_committed'})).enabled,false)
+ assert.equal((await t.decide({...t.request,on:'before_model_request'})).enabled,false)
  assert.equal((await t.decide({...t.request,on:'invented_event'})).enabled,false)
  assert.equal(t.writes(),0);assert.equal(t.m.traces.length,0)
  t.config.blacklist=[{sessionId:'bound-session'}];assert.equal((await t.decide(t.request)).enabled,false)

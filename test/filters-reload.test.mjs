@@ -23,9 +23,9 @@ test('unchanged/reformatted reload is a no-op; changed same/lower revision fails
  await writeFile(configPath,JSON.stringify({...document,revision:3,entries:[{id:'r',adapterId:'reject'}]}));await assert.rejects(m.reload(),/source type rejected/);assert.equal(m.configuration.document.revision,2)
 })
 test('no-op reload and error recovery never revive an earlier MVU permission lease',async t=>{
- const doc={...document,entries:[{id:'mvu:test',adapterId:'tavern.mvu',whitelist:[{global:true}],store:{on:'card_variable_update',rule:true,strategy:[]}}]}, {m,configPath}=await setup(t,doc)
+ const doc={...document,entries:[{id:'mvu:test',adapterId:'tavern.mvu',whitelist:[{global:true}],store:{on:'assistant_message_committed',rule:true,strategy:[]}}]}, {m,configPath}=await setup(t,doc)
  let decide;installMvu(m,{protocolVersion:1,list:async()=>[],read:async()=>null,validateConfig:async()=>{},registerUsage:fn=>{decide=fn;return()=>{}}},new Usage(m))
- const request={id:'mvu:test',managementMode:'managed',on:'card_variable_update',scope:{sessionId:'s'},event:{}}
+ const request={id:'mvu:test',managementMode:'managed',on:'assistant_message_committed',scope:{sessionId:'s'},event:{}}
  const old=await decide(request);assert.equal(old.checkCurrent(),true)
  const noop=m.reload();assert.equal(old.checkCurrent(),false);await noop;assert.equal(old.checkCurrent(),false)
  const current=await decide(request);assert.equal(current.checkCurrent(),true)

@@ -1,3 +1,4 @@
+import assembler from 'dsh-prompt-assembler/plugin'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {createRequire} from 'node:module'
@@ -23,9 +24,10 @@ test('source-owned world-book receipts reach the manager with defaults and expli
   class Provider extends llm.LlmAdapter{async resolveModel(provider,id){return {provider,id,name:id,systemPromptUpdate:'in-history'}}async *stream(request){requests.push(structuredClone(request.messages));yield{type:'block-start',index:0,blockType:'text'};yield{type:'text-delta',index:0,text:'ANSWER'};yield{type:'block-end',index:0,block:{type:'text',text:'ANSWER'}};yield{type:'finish',reason:{kind:'stop'}}}}
   ctx.llm.registerAdapter(['test'],new Provider())
   let store
+  await ctx.plugin(assembler,{storageDir:join(dir,'assembler')})
   await ctx.plugin({name:tavern.name,inject:tavern.inject,apply(c){store=tavern.apply(c,{storageDir:join(dir,'tavern')})}})
   const configPath=join(dir,'config.json');await writeFile(configPath,JSON.stringify({schemaVersion:1,revision:1,entries:[],presets:{}}))
-  await ctx.plugin(managerPlugin,{storageDir:dir,configPath})
+  const managerHandle=ctx.plugin(managerPlugin,{storageDir:dir,configPath});await managerHandle
   store.characterStore.import(Buffer.from(JSON.stringify({spec:'chara_card_v2',spec_version:'2.0',data:{name:'Fixture',character_book:{entries:[{id:1,keys:[],content:'EMBEDDED_WORLD_BOOK_BODY',enabled:true,constant:true,position:'before_char'}]}}})),{id:'fixture'})
   const book=store.worldBookStore.import({entries:{0:{uid:0,content:'STANDALONE_WORLD_BOOK_BODY',constant:true}}},{name:'Fixture Book'})
   const {agent}=await ctx.agents.create({sessionId:'worldbook-proof',agentOptions:{provider:'test',model:'test'}})
@@ -55,5 +57,17 @@ test('source-owned world-book receipts reach the manager with defaults and expli
   const journal=JSON.parse(await readFile(join(dir,'observations.json'),'utf8'))
   assert.deepEqual(journal.filter(fact=>fact.id===id&&fact.adapterId===skipped.adapterId&&fact.requestId===`${agent.id}:${event.seq}`&&fact.phase==='skipped'),skipped.facts)
   assert.equal(JSON.parse(await readFile(configPath,'utf8')).entries.length,1)
+  const savedConfiguration=await readFile(configPath,'utf8')
+  await managerHandle.dispose()
+  agent.followup(llm.createUserMessage({content:[{type:'text',text:'AFTER UNINSTALL'}],source:{kind:'user'}}));await agent.whenIdle();assert.deepEqual(errors,[])
+  const restoredTexts=requests.at(-1).flatMap(message=>message.content.filter(block=>block.type==='text').map(block=>block.text)).join('\n')
+  assert.match(restoredTexts,/EMBEDDED_WORLD_BOOK_BODY/);assert.match(restoredTexts,/STANDALONE_WORLD_BOOK_BODY/)
+  assert.equal(await readFile(configPath,'utf8'),savedConfiguration,'uninstall retains optional manager configuration')
+  assert(agent.session.deriveMessages().some(message=>message.content?.some(block=>block.text==='ONE')))
+  const reinstalled=ctx.plugin(managerPlugin,{storageDir:dir,configPath});await reinstalled
+  agent.followup(llm.createUserMessage({content:[{type:'text',text:'AFTER REINSTALL'}],source:{kind:'user'}}));await agent.whenIdle();assert.deepEqual(errors,[])
+  const managedTexts=requests.at(-1).flatMap(message=>message.content.filter(block=>block.type==='text').map(block=>block.text)).join('\n')
+  assert.match(managedTexts,/EMBEDDED_WORLD_BOOK_BODY/);assert.doesNotMatch(managedTexts,/STANDALONE_WORLD_BOOK_BODY/)
+  assert.equal(await readFile(configPath,'utf8'),savedConfiguration,'reinstall reuses the saved manager rules')
  }finally{await ctx.fiber.dispose();await rm(dir,{recursive:true,force:true})}
 })

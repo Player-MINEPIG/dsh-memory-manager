@@ -10,12 +10,10 @@ DSH 原生全局 Settings「记忆管理」与会话「记忆管理」页签共�
 
 ## 安装
 
-目标 DSH `0.2.0-rc.2`、Node.js 22 或更新版本。当前为本地开发版本，尚未发布到 npm 或 GitHub。
+目标 DSH `0.2.0-rc.2`、Node.js 22 或更新版本。源码通过[私有 GitHub 仓库](https://github.com/Player-MINEPIG/dsh-memory-manager)提供，需要仓库访问权限；未发布到 npm。Tavern 与 assembler 均不依赖本插件。
 
 ```sh
-npm install
-npm run check
-dsh plugin --profile web add /absolute/path/to/dsh-memory-manager
+dsh plugin --profile web add github:Player-MINEPIG/dsh-memory-manager#main
 ```
 
 包同时提供 `dsh.bundle`、`cordis.patch.yml` 和预构建 client。默认配置位于 `$DSH_HOME/dsh-memory-manager/config.json`。可在详情页校验并保存本地条目，成功保存会自动递增 `revision`。手动编辑文件可参考 [examples/config.json](examples/config.json)，修改后递增 `revision`，再点击「重新读取管理配置」。未修改文件时重复读取为正常无操作。首次安装缺少配置文件时安全创建空的本地覆盖文件；来源默认规则作为独立底层生效。损坏或不兼容的已有配置显示错误，不悄悄覆盖。旧有效值保留供查看；托管执行在错误期间被阻止。
@@ -31,7 +29,9 @@ dsh plugin --profile web add /absolute/path/to/dsh-memory-manager
 - preset 持续覆盖明确提供的字段。名单、规则树、操作链整体替换；空值与未提供不同。`id/content` 不被覆盖。UI 展示字段来源。
 - 来源原生管理、已委托管理、托管但不适用是不同状态。已托管资源缺配置时拒绝执行。
 
-卡片变量写入使用独立的 `card_variable_update` 时机和来源验证事务。代码审批、写能力授权和管理规则是分别校验的条件；默认示例不启用写，历史气泡不提升到当前可写范围。`mvu_card_write_cause` 可筛选宿主确认的交互、定时器或脚本调用原因，不能代替授权。具体合同见 API 文档。本地合成卡已验证完整授权、写入、通知、撤销和首轮失效链路；这不代表任意第三方卡片或完整 Helper 框架兼容。
+当前 Tavern 的原生卡片变量操作由来源的执行开关、绑定、写授权、CAS 与 schema 管理，不再请求 memory-manager 的 store/retrieve 许可。Manager 仍观察原生卡片的执行事实（`configRevision:null`），并管理模型请求读取与助手回复更新。旧卡片交互策略不再作为新默认项提供；已有配置保留查看，但不控制原生执行，不支持的导入或保存会拒绝。历史气泡不能提升到当前可写范围。
+
+Current Tavern native card writes use source execution switches, active bindings, grants, CAS and schema validation. Manager policies govern model reads and assistant updates; they observe native card facts without granting or blocking them. Legacy card policy definitions remain readable but are no longer offered as defaults, and unsupported imports/saves are rejected.
 
 详情页通过独立选项页编辑类型、预设、名单、存储和读取字段，支持搜索、来源/预设筛选、参数控件、条件树和顺序操作链。未知参数原样保留并允许明确替换；管理配置无需手输 JSON。「存取预设」页提供新建、编辑、导入和导出，adapter 默认组合可保存为本地覆盖；[存取预设文档](docs/PRESETS.md)说明文件格式与整批拒绝规则。完整能力、内置预设与本地声明扩展示例见 [选项与扩展文档](docs/OPTIONS.md)。不会运行配置文件中的 JS。可信 Host 插件可注册条件/操作。时间检查点可接同一触发协议；主动唤醒 Agent 还需宿主调度与授权，本插件不建立后台任务循环。
 
@@ -41,7 +41,7 @@ dsh plugin --profile web add /absolute/path/to/dsh-memory-manager
 | --- | --- | --- |
 | DSH Skills | 目录与正文读取；会话查询使用真实 Agent scope | 优先会话 preset registry，未知会话不回退全局；无编辑接口，明确只读 |
 | Tavern 世界书 / Prompt Template | `tavernMemorySources` v1 的目录、正文、来源 CAS 与 native/managed 策略桥 | 仅声明来源已实现的固定读取链；模板为只读求值子集，世界书独立库与内嵌资源以来源实际声明的能力为准。旧 HTTP 世界书桥明确只读 |
-| Tavern MVU v1 | 公开服务包装、CAS 编辑、使用决策、真实事件观察；可选 card_variable_update 策略桥 | 需要提供 `tavernMvu` v1 的 Tavern 版本；不把旧 Tavern 当作已兼容 |
+| Tavern MVU v1 | 公开服务包装、CAS 编辑、使用决策、真实事件观察；原生卡片写入由来源独立授权 | 需要提供 `tavernMvu` v1 的 Tavern 版本；不把旧 Tavern 当作已兼容 |
 | 独立 assembler 来源协议 v1 | `memory-manager.resources` 只读来源，版本化块标识；adapter 由 assembler 维护 | 需支持 request assembly v1 的 DSH core；用户自行选择装配来源；不会自动改预设 |
 | TaskSystem | scope/authority/使用协议兼容边界 | 本版本没有 TaskSystem adapter，不开放额外模型工具或放宽 guard |
 

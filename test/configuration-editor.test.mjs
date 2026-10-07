@@ -39,10 +39,10 @@ test('queued saves are CAS serialized and validator unload cannot publish a stal
 })
 test('configuration saves revoke old MVU leases and source-owned strategies are validated by source, not generic operation registry',async t=>{
  const {m,usage,path}=await setup(t);let decide
- const mvu={id:'mvu:1',adapterId:'tavern.mvu',type:'mvu-state',whitelist:[{global:true}],store:{on:'card_variable_update',rule:true,strategy:[{operation:'source-op'}]}}
+ const mvu={id:'mvu:1',adapterId:'tavern.mvu',type:'mvu-state',whitelist:[{global:true}],store:{on:'assistant_message_committed',rule:true,strategy:[{operation:'source-op'}]}}
  const disk={...doc,revision:2,entries:[...doc.entries,mvu]};await writeFile(path,JSON.stringify(disk));await m.reload()
  installMvu(m,{protocolVersion:1,list:async()=>[],read:async()=>null,validateConfig:()=>{},registerUsage:fn=>{decide=fn;return()=>{}}},usage)
- const request={id:mvu.id,scope:{sessionId:'s'},managementMode:'managed',on:'card_variable_update',event:{}},lease=await decide(request)
+ const request={id:mvu.id,scope:{sessionId:'s'},managementMode:'managed',on:'assistant_message_committed',event:{}},lease=await decide(request)
  assert.equal(lease.checkCurrent(),true)
  assert.equal((await m.validateEntry({id:mvu.id,adapterId:'tavern.mvu',entry:mvu,expectedRevision:2})).valid,true);assert.equal(lease.checkCurrent(),true)
  const save=m.saveEntry(args(m,{...doc.entries[0],blacklist:[]}));assert.equal(lease.checkCurrent(),false);await save;assert.equal(lease.checkCurrent(),false)

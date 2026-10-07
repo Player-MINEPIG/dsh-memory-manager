@@ -50,9 +50,9 @@ test('actual manager MVU handler uses enriched exact whitelist/blacklist and nev
  const m=new MemoryManager({configPath:'/unused'}),usage=new Usage(m);let callback,scope
  usage.registerCondition({id:'capture-own-scope',test:event=>{scope=event.scope;return true}})
  const stop=installMvu(m,{protocolVersion:1,list:()=>[],read:()=>null,validateConfig:()=>{},registerUsage:fn=>{callback=fn;return()=>{}}},usage),p=directories(m.scopeDirectory)
- const entry={id:'mvu:own',adapterId:'tavern.mvu',type:'mvu-state',whitelist:[{sessionId}],blacklist:[],store:{on:'card_variable_update',rule:{all:[{condition:{id:'mvu_card_write_cause',params:{cause:'user-interaction'}}},'capture-own-scope']},strategy:[{operation:'validate_card_update'},{operation:'apply_card_update'}]}}
+ const entry={id:'mvu:own',adapterId:'tavern.mvu',type:'mvu-state',whitelist:[{sessionId}],blacklist:[],store:{on:'assistant_message_committed',rule:{all:['contains_mvu_update','capture-own-scope']},strategy:[{operation:'parse_mvu_update'},{operation:'validate_update'},{operation:'apply_update'}]}}
  m.configuration.document={schemaVersion:1,revision:1,presets:{},entries:[entry]}
- const request={id:entry.id,managementMode:'managed',on:'card_variable_update',scope:{authority:'local',sessionId},event:{cause:'user-interaction'}}
+ const request={id:entry.id,managementMode:'managed',on:'assistant_message_committed',scope:{authority:'local',sessionId},event:{containsMvuUpdate:true}}
  try{const permit=await callback(request);assert.equal(permit.enabled,true);assert.equal(scope.sessionId,sessionId);assert.equal(scope.workspaceId,'own-workspace');assert.equal(scope.characterId,'own-character');assert.equal(permit.checkCurrent(),true)
   assert.equal((await callback({...request,scope:{sessionId:otherSession}})).enabled,false)
   entry.whitelist=[{global:true}];entry.blacklist=[{sessionId}];assert.equal((await callback(request)).enabled,false)
@@ -84,16 +84,17 @@ async function realSource(t){
  const before=()=>service.read({id:policy.id,scope:{sessionId}}),request=(revision,operationId)=>({capability:binding.capability,operation:'patch',value:[{op:'delta',path:'/hp',value:-2}],expectedRevision:revision,operationId,cause:'user-interaction'})
  return {service,manager,usage,p,policy,configure,before,request,scope,stop,revoke:()=>{grantActive=false}}
 }
-test('real MVU card commit obeys exact session whitelist and blacklist with both actual directories installed',{skip:!sourceRoot},async t=>{
+test('native MVU card operations stay with source grants rather than directory policy claims',{skip:!sourceRoot},async t=>{
  const f=await realSource(t),before=await f.before(),result=await f.service.cardWrite(f.request(before.revision,'own-allowed'))
  assert.equal(result.variables.stat_data.hp,before.content.stat_data.hp-2);assert.equal(result.revision,before.revision+1);assert.deepEqual(await f.service.cardWrite(f.request(before.revision,'own-allowed')),result)
- const deny={...f.policy,whitelist:[{global:true}],blacklist:[{sessionId}]};await f.configure(deny);const blocked=await f.before()
- await assert.rejects(f.service.cardWrite(f.request(blocked.revision,'own-blacklist')),{code:'MVU_USAGE_DENIED'});assert.equal((await f.before()).revision,blocked.revision)
- await f.configure({...f.policy,whitelist:[{sessionId:otherSession}]});await assert.rejects(f.service.cardWrite(f.request(blocked.revision,'own-other-session')),{code:'MVU_USAGE_DENIED'});assert.equal((await f.before()).revision,blocked.revision)
- await f.configure(f.policy);for(const cause of ['script','interval'])await assert.rejects(f.service.cardWrite({...f.request(blocked.revision,cause),cause}),{code:'MVU_USAGE_DENIED'})
- assert.equal(f.manager.traces.filter(fact=>fact.phase==='applied').length,1)
+ for(const [operationId,policy] of [['blacklist',{...f.policy,whitelist:[{global:true}],blacklist:[{sessionId}]}],['other-session',{...f.policy,whitelist:[{sessionId:otherSession}]}]]){
+  await f.configure(policy);const current=await f.before(),next=await f.service.cardWrite(f.request(current.revision,operationId));assert.equal(next.revision,current.revision+1)
+ }
+ await f.configure(f.policy)
+ for(const cause of ['script','interval']){const current=await f.before(),next=await f.service.cardWrite({...f.request(current.revision,cause),cause});assert.equal(next.revision,current.revision+1)}
+ assert.equal(f.manager.traces.filter(fact=>fact.phase==='applied').length,5)
 })
-test('real MVU final source await rejects directory lease, registry ABA, config reload and source-unload revocation',{skip:!sourceRoot},async t=>{
+test('native final source await rechecks grants independently of manager directory and configuration lifetime',{skip:!sourceRoot},async t=>{
  for(const action of ['selection','workspace','directory-ABA','reload','unload','grant'])await t.test(action,async sub=>{
   const f=await realSource(sub),before=await f.before(),original=f.service.resolveScope
   let enter,release,calls=0;const entered=new Promise(resolve=>enter=resolve)
@@ -105,7 +106,7 @@ test('real MVU final source await rejects directory lease, registry ABA, config 
   if(action==='reload')await f.configure({...f.policy,blacklist:[{sessionId}]})
   if(action==='unload')f.stop()
   if(action==='grant')f.revoke()
-  release();await assert.rejects(pending)
-  const after=await f.before();assert.equal(after.revision,before.revision);assert.deepEqual(after.content,before.content);assert(!f.manager.traces.some(fact=>fact.phase==='applied'))
+  release();if(action==='grant')await assert.rejects(pending);else assert.equal((await pending).revision,before.revision+1)
+  const after=await f.before();assert.equal(after.revision,action==='grant'?before.revision:before.revision+1);if(action==='grant'){assert.deepEqual(after.content,before.content);assert(!f.manager.traces.some(fact=>fact.phase==='applied'))}
  })
 })

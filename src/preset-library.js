@@ -28,7 +28,7 @@ export function strictPreset(preset){
  return clone(preset)
 }
 export function presetLibrary(manager){
- const items=new Map(Object.entries(builtinPresets).map(([id,p])=>[id,{id,label:p.label,description:p.description??'',adapterIds:p.adapterIds,configuration:clone(p.configuration),origin:'builtin'}]))
+ const items=new Map(Object.entries(builtinPresets).filter(([,p])=>!p.legacy).map(([id,p])=>[id,{id,label:p.label,description:p.description??'',adapterIds:p.adapterIds,configuration:clone(p.configuration),origin:'builtin'}]))
  for(const adapter of manager.adapters.values())for(const p of adapter.optionCatalog?.presets??[]){const id=Object.hasOwn(builtinPresets,p.id)&&builtinPresets[p.id].adapterIds.includes(adapter.id)?p.id:`adapter:${adapter.id}:${p.id}`;items.set(id,{...clone(p),id,description:p.description??'',adapterIds:[adapter.id],origin:'adapter'})}
  const doc=manager.configuration.document
  for(const [id,configuration] of Object.entries(doc.presets)){const old=items.get(id),meta=doc.presetMetadata?.[id];items.set(id,{id,label:meta?.label??old?.label??id,description:meta?.description??old?.description??'',adapterIds:meta?.adapterIds??old?.adapterIds??[],configuration:clone(configuration),origin:'local'})}

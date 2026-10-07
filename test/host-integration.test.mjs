@@ -1,3 +1,4 @@
+import assembler from 'dsh-prompt-assembler/plugin'
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {createRequire} from 'node:module'
@@ -22,6 +23,7 @@ test('actual DSH request contains managed resource and version evidence; unload 
   class Provider extends llm.LlmAdapter{async resolveModel(provider,id){return {provider,id,name:id,systemPromptUpdate:'in-history'}}async *stream(request){requests.push(structuredClone(request.messages));yield{type:'block-start',index:0,blockType:'text'};yield{type:'text-delta',index:0,text:'ANSWER'};yield{type:'block-end',index:0,block:{type:'text',text:'ANSWER'}};yield{type:'finish',reason:{kind:'stop'}}}}
   ctx.llm.registerAdapter(['test'],new Provider())
   let store
+  await ctx.plugin(assembler,{storageDir:join(dir,'assembler')})
   await ctx.plugin({name:tavern.name,inject:tavern.inject,apply(c){store=tavern.apply(c,{storageDir:join(dir,'tavern')})}})
   const configPath=join(dir,'config.json')
   await writeFile(configPath,JSON.stringify({schemaVersion:1,revision:1,entries:[{id:'acceptance:1',adapterId:'acceptance',type:'text',whitelist:[{global:true}],blacklist:[],retrieve:{on:'before_model_request',rule:true,strategy:[{operation:'memory.read_content'},{operation:'memory.to_text'}]}}],presets:{}}))

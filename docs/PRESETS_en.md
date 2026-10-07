@@ -6,6 +6,9 @@ The resource table's preset page supports creation, editing, JSON import and exp
 
 An adapter can declare several defaults in `optionCatalog.presets`. Custom default IDs become `adapter:<adapterId>:<presetId>`; supported built-in IDs retain their names. Reading defaults does not write files. Explicitly saving a resource reference persists only the selected new default definition. Editing a default saves a local override under the same ID. Editing a referenced preset affects its consumers and requires validation by all affected resources' sources before saving. Sources retain content, bindings, permissions and native execution.
 
+
+Current Tavern native card writes do not use Manager policies. The legacy `builtin:mvu-card-interaction` is no longer offered as a new default; persisted definitions remain readable, while unsupported events, conditions and write strategies are rejected on import or save. Tavern source execution switches and write grants control native operations.
+
 ## Portable files
 
 ```json

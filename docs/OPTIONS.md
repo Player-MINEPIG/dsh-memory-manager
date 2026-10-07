@@ -95,7 +95,7 @@ manager 一次保留 header 快照，默认最多 2000 条、1 MB，获取与每
 | --- | --- |
 | `builtin:skill-retrieve` | DSH Skills：type=skill；请求前、始终满足、读取正文并转文本 |
 | `builtin:mvu-managed` | MVU：type=mvu-state；助手提交后解析/验证/应用；请求前读取/渲染/提供 |
-| `builtin:mvu-card-interaction` | MVU：type=mvu-state；卡片更新时检查 user-interaction，验证并应用更新；不授予写权限 |
+
 | `builtin:worldbook-retrieve` | 新世界书服务：type=world-book；请求前激活并输出 |
 | `builtin:prompt-template-retrieve` | 新模板服务：type=prompt-template；请求前只读展开并输出 |
 
