@@ -25,10 +25,12 @@ export function installManagedSources(manager,service,usage){
     if(capabilityErrors(adapter,config,conditions,usage.operations).length)return {enabled:false,reason:'capability-mismatch'}
     await adapter.validateConfig(clone(config))
     const scopeLease=await manager.scopeDirectory.context(request.scope??{},{trustedSource:true})
-    if(!policyApplies(policy,scopeLease.scope,true))return {enabled:false,reason:'scope'}
+    const preview=request.event?.preview===true&&!request.scope?.sessionId
+    const effectiveScope=preview&&policy.previewScope?{...scopeLease.scope,...policy.previewScope}:scopeLease.scope
+    if(!policyApplies(policy,effectiveScope,true,preview))return {enabled:false,reason:'scope'}
     const behavior=config[mode]
     if(!behavior||!(Array.isArray(behavior.on)?behavior.on:[behavior.on]).includes(request.on))return {enabled:false,reason:'timing'}
-    const enabled=await usage.rule(behavior.rule??true,{...request.event,on:request.on,scope:scopeLease.scope},conditions)
+    const enabled=await usage.rule(behavior.rule??true,{...request.event,on:request.on,scope:effectiveScope},conditions)
     const owns=()=>{try{manager.assertOwner(adapter,request.id);return true}catch{return false}}
     const checkCurrent=()=>policy.checkCurrent()&&scopeLease.checkCurrent()&&manager.isAdapterEnabled(adapter.id)&&owns()&&manager.optionCatalog({adapterId:adapter.id}).catalogRevision===catalogRevision&&!disposed&&!lifetime.signal.aborted&&manager.adapters.get(adapter.id)===adapter&&manager.lifetimes.get(adapter)===lifetime&&!manager.configuration.error&&manager.configuration.document===document&&manager.configuration.pending===epoch&&conditions.size===usage.conditions.size&&[...conditions].every(([key,value])=>usage.conditions.get(key)===value)
     if(!checkCurrent())return {enabled:false,reason:'config-changed'}

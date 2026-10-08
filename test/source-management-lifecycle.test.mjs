@@ -29,7 +29,7 @@ function sourceFixture(mvu=false){
   update:({content,expectedRevision})=>{assert.equal(expectedRevision,revision);body=content;revision++;return source.read()}
  }
  return {source,id,adapterId,sessionId,configuration,get metadata(){return metadata},invalidate:()=>epoch++,
-  decide:async(scope={sessionId})=>handler?handler({id,on:'before_model_request',scope,managementMode:'managed',event:{}}):{enabled:true,reason:'source-default'},
+  decide:async(scope={sessionId},event={})=>handler?handler({id,on:'before_model_request',scope,managementMode:'managed',event}):{enabled:true,reason:'source-default'},
   scope:{sessionId}}
 }
 async function setup(t,mvu=false){
@@ -103,4 +103,24 @@ test('defaults invalidated during validation cannot be saved; invalid local file
  await writeFile(configPath,'INVALID OWN FILE');await assert.rejects(manager.reload())
  assert.equal(await readFile(configPath,'utf8'),'INVALID OWN FILE');assert.equal((await fixture.decide()).enabled,false)
  assert.match(managementStatus((await manager.query({scope:fixture.scope})).rows[0]),/配置错误/)
+})
+
+
+test('sessionless preview requires a source binding and preserves scope/rule denials',async t=>{
+ const {manager,fixture,args}=await setup(t)
+ assert.equal((await fixture.decide({}, {preview:true})).enabled,false)
+ const defaults=fixture.source.getManagementDefaults
+ fixture.source.getManagementDefaults=args=>({...defaults(args),previewScope:{characterId:'draft-character'}})
+ assert.equal((await fixture.decide({})).enabled,false,'a preview binding cannot authorize real use')
+ const lease=await fixture.decide({}, {preview:true})
+ assert.equal(lease.enabled,true);assert.equal(lease.checkCurrent(),true)
+ for(const entry of [{whitelist:[]},{blacklist:[{global:true}]},{blacklist:[{characterId:'draft-character'}]},{retrieve:{rule:false}},{retrieve:{}}]){
+  await manager.saveEntry({...args({id:fixture.id,adapterId:fixture.adapterId,...entry}),sessionId:undefined})
+  assert.equal((await fixture.decide({}, {preview:true})).enabled,false,JSON.stringify(entry))
+ }
+ await manager.saveEntry({...args({id:fixture.id,adapterId:fixture.adapterId,whitelist:[{characterId:'draft-character'}]}),sessionId:undefined})
+ assert.equal((await fixture.decide({}, {preview:true})).enabled,true)
+ const current=await fixture.decide({}, {preview:true});fixture.invalidate();assert.equal(current.checkCurrent(),false)
+ manager.setAdapterEnabled({id:fixture.adapterId,enabled:false})
+ assert.equal((await fixture.decide({}, {preview:true})).enabled,false)
 })

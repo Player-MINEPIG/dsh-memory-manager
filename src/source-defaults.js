@@ -16,6 +16,7 @@ export function sourceConfiguration(manager,id,{adapterId,scope={},document=mana
    safe(configuration)
    if(!configuration||Array.isArray(configuration)||Object.keys(configuration).some(key=>!['type','store','retrieve'].includes(key))||JSON.stringify(configuration).length>32000)fail('INVALID_SOURCE_DEFAULTS','来源默认配置只能包含有界 type/store/retrieve 规则。')
    validateDocument({schemaVersion:1,revision:1,entries:[{id,adapterId:sourceId,...configuration}],presets:{}})
+   if(snapshot.previewScope!==undefined&&(scope.sessionId||!snapshot.previewScope||typeof snapshot.previewScope!=='object'||Array.isArray(snapshot.previewScope)||Object.entries(snapshot.previewScope).some(([key,value])=>!['characterId','presetId','userId'].includes(key)||typeof value!=='string'||!value)))fail('INVALID_SOURCE_DEFAULTS','Invalid sessionless preview binding.')
    if(snapshot.checkCurrent()!==true)fail('SOURCE_DEFAULTS_CHANGED','来源默认配置或资源绑定已变化。')
    sourceDefault={available:true,revision:snapshot.revision,scopePolicy:snapshot.scopePolicy,configuration:clone(configuration)}
   }
@@ -29,12 +30,13 @@ export function sourceConfiguration(manager,id,{adapterId,scope={},document=mana
  const checkCurrent=()=>{
   try{return !adapter||manager.adapters.get(sourceId)===adapter&&manager.lifetimes.get(adapter)===lifetime&&!lifetime?.signal.aborted&&manager.isAdapterEnabled(sourceId)&&(!snapshot||snapshot.checkCurrent()===true)}catch{return false}
  }
- return {...composed,scopePolicy,sourceDefault,checkCurrent}
+ return {...composed,scopePolicy,sourceDefault,checkCurrent,...(base&&snapshot?.previewScope?{previewScope:clone(snapshot.previewScope)}:{})}
 }
 
-export function policyApplies(policy,scope={},trustedSource=false){
+export function policyApplies(policy,scope={},trustedSource=false,preview=false){
  if(!policy.config||!policy.checkCurrent())return false
  if(applies(policy.config,scope))return true
- if(!trustedSource||policy.scopePolicy!=='source-bound'||typeof scope.sessionId!=='string'||!scope.sessionId)return false
+ if(!trustedSource||policy.scopePolicy!=='source-bound')return false
+ if(!(typeof scope.sessionId==='string'&&scope.sessionId)&&!(preview===true&&policy.previewScope))return false
  return !policy.config.blacklist.some(selector=>Object.entries(selector).every(([key,value])=>key==='global'?value===true:scope[key]===value))
 }
