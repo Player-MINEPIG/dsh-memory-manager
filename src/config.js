@@ -3,6 +3,8 @@ import { readFile,mkdir,open } from 'node:fs/promises'
 import {dirname} from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 export const clone = value => structuredClone(value)
+export {sourceFields} from './config-composition.js'
+import {sourceFields,composeConfiguration} from './config-composition.js'
 export function fail(code, message) { throw Object.assign(new Error(message), { code }) }
 const object = x => x && typeof x === 'object' && !Array.isArray(x)
 export function safe(value, depth = 0) {
@@ -28,6 +30,7 @@ function rule(value) {
 function validateFields(entry, partial = false) {
   if (!object(entry)) fail('INVALID_CONFIG','Entry/preset must be an object')
   if(Object.hasOwn(entry,'content'))fail('INVALID_CONFIG','正文不属于管理规则配置。')
+  if(entry.followSource!==undefined&&(partial||!Array.isArray(entry.followSource)||new Set(entry.followSource).size!==entry.followSource.length||entry.followSource.some(field=>!sourceFields.includes(field))))fail('INVALID_CONFIG','followSource must contain unique resource configuration fields, and cannot belong to a preset')
   for (const key of Object.keys(entry)) if (partial && ['id','adapterId','sourceAdapterId','preset'].includes(key)) fail('INVALID_CONFIG',`Unexpected configuration field: ${key}`)
   for (const key of ['whitelist','blacklist']) if (entry[key] !== undefined) {
     if (!Array.isArray(entry[key])) fail('INVALID_CONFIG',`${key} must be an array`)
@@ -82,28 +85,7 @@ export function validateDocument(doc) {
   }
   return clone(doc)
 }
-export function effective(doc,id,sourceDefault=null) {
-  const local=doc.entries.find(e=>e.id===id)
-  if (!local&&!sourceDefault) return {config:null,origins:{},revision:doc.revision}
-  const config={whitelist:[],blacklist:[],preset:null},origins={whitelist:'default',blacklist:'default',preset:'default'}
-  for(const [values,origin] of [[sourceDefault,'source-default'],[local,'local']])for(const [key,value] of Object.entries(values??{})){
-    if(['store','retrieve'].includes(key)){
-      if(origin==='local'&&!Object.keys(value).length){
-        config[key]={}
-        for(const field of Object.keys(origins))if(field.startsWith(key+'.'))delete origins[field]
-      }else config[key]={...config[key],...clone(value)}
-      for(const child of Object.keys(value))origins[`${key}.${child}`]=origin
-    }else config[key]=clone(value)
-    origins[key]=origin
-  }
-  const preset=local?.preset==null?null:presetDefinitions(doc)[local.preset]
-  for (const [k,v] of Object.entries(preset??{})) {
-    if (['store','retrieve'].includes(k)) { config[k]={...config[k],...clone(v)}; for(const child of Object.keys(v)) origins[`${k}.${child}`]=`preset:${local.preset}` }
-    else {config[k]=clone(v);origins[k]=`preset:${local.preset}`}
-  }
-  validateFields(config)
-  return {config,origins,revision:doc.revision}
-}
+export function effective(doc,id,sourceDefault=null){const result=composeConfiguration(doc,id,sourceDefault);if(result.config)validateFields(result.config);return result}
 export function applies(config,scope={}) {
   const match=s=>Object.entries(s).every(([k,v])=>k==='global'?v===true:scope[k]===v)
   return !!config && config.whitelist.some(match) && !config.blacklist.some(match)

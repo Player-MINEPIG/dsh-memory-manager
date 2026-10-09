@@ -35,7 +35,7 @@ test('card policy fails closed for missing/error config, empty whitelist and in-
 test('source denied and committed card facts remain separate and preserve cause and operation identity',()=>{
  const t=setup(),base={id:'mvu:card',sessionId:'bound-session',on:'card_variable_update',cause:'interval'}
  t.observe({...base,eventId:'denied',phase:'skipped',reason:'write-capability-denied'})
- assert.equal(t.m.traces[0].phase,'skipped');assert.equal(t.m.traces[0].cause,'interval');assert(!t.m.traces.some(f=>f.phase==='applied'))
+ assert.equal(t.m.traces[0].mode,'store');assert.equal(t.m.traces[0].phase,'skipped');assert.equal(t.m.traces[0].cause,'interval');assert(!t.m.traces.some(f=>f.phase==='applied'))
  t.observe({...base,eventId:'committed',cause:'user-interaction',phase:'applied',detail:'state-committed',revision:4})
  assert.equal(t.m.traces.at(-1).detail,'state-committed');assert.equal(t.m.traces.at(-1).on,'card_variable_update');assert.equal(t.writes(),0)
 })

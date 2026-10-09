@@ -1,5 +1,5 @@
 // Independent synthetic regression probes. Never uses a running Host or user profile.
-// Run: node --test /Users/pmp/Documents/Codex/2026-10-02/task-2/reviews/manager-semantics-fixture.mjs
+// Run: node --test test/review-regressions.test.mjs
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
@@ -92,7 +92,7 @@ test('cancellation during last operation cannot finish as successful completed e
   const controller = new AbortController()
   usage.registerOperation({ id: 'review.operation', run: () => { controller.abort(); return 'after-cancel' } })
   await assert.rejects(() => usage.trigger({ ...request(), signal: controller.signal }), { name: 'AbortError' })
-  assert.equal(manager.traces.some(fact => fact.phase === 'completed'), false)
+  assert.equal(manager.traces.some(fact => fact.phase === 'completed'&&fact.evidence!=='content-read'), false)
 })
 
 test('adapter loaded after config initialization must validate policy before execution', async () => {

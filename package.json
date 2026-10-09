@@ -1,6 +1,6 @@
 {
   "name": "dsh-memory-manager",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Unified resource management, configuration and usage evidence for DSH memory sources.",
   "type": "module",
   "main": "src/index.js",
@@ -17,7 +17,9 @@
     "examples",
     "cordis.patch.yml",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "README_en.md",
+    "CHANGELOG.md"
   ],
   "dsh": {
     "bundle": {
@@ -43,7 +45,8 @@
   },
   "devDependencies": {
     "esbuild": "0.28.2",
-    "dsh-prompt-assembler": "file:../dsh-prompt-assembler"
+    "dsh-prompt-assembler": "file:../dsh-prompt-assembler",
+    "react": "18.3.1"
   },
   "license": "MIT",
   "repository": {

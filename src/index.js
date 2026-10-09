@@ -1,6 +1,8 @@
 import { join } from 'node:path'
 import { MemoryManager } from './manager.js'
 import { Usage } from './usage.js'
+import {installNativeSkillObserver} from './native-skill-observer.js'
+import {installRequestObserver} from './request-observer.js'
 import { skillAdapter } from './adapters/skills.js'
 import {installManagedSources} from './adapters/managed-sources.js'
 import { installMvu } from './adapters/mvu.js'
@@ -17,6 +19,7 @@ export async function apply(ctx,config={}){
   usage.registerOperation({id:'memory.to_text',label:'转换为文本',parameters:{type:'object',properties:{}},readOnly:true,run:({value})=>typeof value==='string'?value:JSON.stringify(value)})
   manager.registerCondition=usage.registerCondition.bind(usage);manager.registerOperation=usage.registerOperation.bind(usage);manager.trigger=usage.trigger.bind(usage)
   ctx.provide('dshMemoryManager',manager)
+  ctx.effect(()=>installRequestObserver(ctx,manager))
   ctx.inject(['sessions','workspaceRegistry'],c=>{
     let current,disposing=false
     const clear=()=>{current?.stop();current?.directory.dispose();current=null}
@@ -32,7 +35,14 @@ export async function apply(ctx,config={}){
   installLegacy()
   ctx.inject(['tavernMemorySources'],c=>c.effect(()=>{legacyWorldBooks?.();legacyWorldBooks=null;let stop;try{stop=installManagedSources(manager,c.tavernMemorySources,usage)}catch(error){installLegacy();throw error}return()=>{stop();installLegacy()}}))
   ctx.effect(()=>()=>{disposing=true;legacyWorldBooks?.()})
-  ctx.inject(['skills'],c=>c.effect(()=>manager.registerAdapter(skillAdapter(c))))
+  const skills=skillAdapter(ctx,{hostSkills:()=>ctx.get('skills')})
+  ctx.effect(()=>manager.registerAdapter(skills))
+  ctx.effect(()=>installNativeSkillObserver(ctx,manager,skills))
+  ctx.inject(['sessionQuery'],c=>c.effect(()=>{
+    const read=async(sessionId,signal)=>{const observation=await c.sessionQuery.observeSession(sessionId,{signal,projectionMode:'none'});try{signal?.throwIfAborted();return observation.events}finally{observation[Symbol.dispose]()}}
+    manager.readSessionEvents=read
+    return()=>{if(manager.readSessionEvents===read)manager.readSessionEvents=undefined}
+  }))
   ctx.inject(['webServer','connection'],c=>c.effect(()=>c.webServer.register({kind:'prefix',path:'/api/dsh-memory-manager',handler:handler(manager,c.connection)})))
   ctx.effect(()=>()=>manager.dispose())
 }

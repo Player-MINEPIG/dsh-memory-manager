@@ -25,7 +25,7 @@ export function sourceConfiguration(manager,id,{adapterId,scope={},document=mana
  const sameRoute=!local||local.adapterId===sourceId
  const base=sourceDefault.available&&sameRoute?{id,adapterId:sourceId,...sourceDefault.configuration}:null
  const composed=effective(document,id,base)
- const scopePolicy=base&&composed.origins.whitelist==='default'?'source-bound':'whitelist'
+ const scopePolicy=base&&['default','source-default'].includes(composed.origins.whitelist)?'source-bound':'whitelist'
  if(scopePolicy==='source-bound')composed.origins.whitelist='source-default'
  const checkCurrent=()=>{
   try{return !adapter||manager.adapters.get(sourceId)===adapter&&manager.lifetimes.get(adapter)===lifetime&&!lifetime?.signal.aborted&&manager.isAdapterEnabled(sourceId)&&(!snapshot||snapshot.checkCurrent()===true)}catch{return false}

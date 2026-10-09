@@ -7,6 +7,7 @@ import {pathToFileURL} from 'node:url'
 import {MemoryManager} from '../src/manager.js'
 import {Usage} from '../src/usage.js'
 import {installManagedSources} from '../src/adapters/managed-sources.js'
+import {operationStatus,operationTriggered} from '../src/observation-modes.js'
 import {registerRequestSource} from 'dsh-prompt-assembler/adapters/memory-manager'
 const root=process.env.DSH_MEMORY_SOURCES
 
@@ -60,14 +61,16 @@ test('source-owned world-book receipt associates the real request with source de
  const event={type:'request/assembly',seq:3,data:{turn:2,step:0,messages:result.messages,metadata:{owner:'pmp-dsh-tavern',assembly:{...result,preview:false}}}}
  session.snapshotEvents=()=>[event]
  const read=async turn=>roundRows(await manager.query({scope}),turn).find(row=>row.id===id)
- assert.equal((await read('2')).facts.length,0)
- // A preview, absent request and a side call do not become usage evidence.
+ const prepared=await read('2')
+ assert.equal(prepared.facts.length,1);assert.equal(prepared.facts[0].evidence,'content-read');assert.equal(operationStatus(prepared,'retrieve'),'unknown')
+ // Successful preparation is retained, but previews and absent requests cannot confirm inclusion.
  event.data.metadata.assembly.preview=true;service.observeRequest({messages:result.messages},session)
  event.data.metadata.assembly.preview=false;service.observeRequest({messages:[]},session)
- assert.equal((await read('2')).facts.length,0)
+ assert.deepEqual((await read('2')).facts,prepared.facts)
  service.observeRequest({messages:result.messages},session);service.observeRequest({messages:result.messages},session)
  const row=await read('2')
- assert.equal(row.sourceDefault.available,true);assert.equal(row.origins['retrieve.rule'],'source-default');assert.equal(row.managementMode,'managed');assert.equal(row.applied,true);assert.equal(row.status,'past');assert.equal(row.facts.length,1);assert.equal(row.facts[0].requestId,'s:3');assert.equal(row.facts[0].revision,service.worldBooks.read({id}).revision)
+ const included=row.facts.filter(f=>operationTriggered(f,'retrieve'))
+ assert.equal(row.sourceDefault.available,true);assert.equal(row.origins['retrieve.rule'],'source-default');assert.equal(row.managementMode,'managed');assert.equal(row.applied,true);assert.equal(operationStatus(row,'retrieve'),'triggered');assert.equal(row.facts.length,2);assert.equal(included.length,1);assert.equal(included[0].requestId,'s:3');assert.equal(included[0].revision,service.worldBooks.read({id}).revision)
  assert.equal((await read('1')).facts.length,0);assert.equal((await read('1')).applied,false)
  // An explicit deny overrides source defaults and reports a skip, not application.
  const before=service.worldBooks.read({id})

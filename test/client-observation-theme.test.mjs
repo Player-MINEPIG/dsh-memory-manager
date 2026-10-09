@@ -11,12 +11,12 @@ test('an absent receipt is not labelled as proof of non-use, while application a
  assert.equal(resourceStatus(roundRows(data,'2')[0]),'策略跳过');assert.equal(policySkipReasons(roundRows(data,'2')[0]),'config-unavailable')
  data.rows[0].facts=[]
  data.rows[0].facts.push({turn:2,phase:'triggered'})
- assert.equal(resourceStatus(roundRows(data,'2')[0]),'曾触发')
+ assert.equal(resourceStatus(roundRows(data,'2')[0]),'已触发')
  data.rows[0].facts.push({turn:2,phase:'applied'})
- assert.equal(resourceStatus(roundRows(data,'2')[0]),'已应用')
+ assert.equal(resourceStatus(roundRows(data,'2')[0]),'已触发')
  assert.equal(resourceStatus(roundRows(data,'1')[0]),'未记录触发')
  data.rows[0].activeFacts.push({turn:2,phase:'started'})
- assert.equal(resourceStatus(roundRows(data,'2')[0]),'正在触发')
+ assert.equal(resourceStatus(roundRows(data,'2')[0]),'处理中')
 })
 
 test('default and sticky buttons use neutral theme fill, without the dark toolbar overlay in light mode',()=>{

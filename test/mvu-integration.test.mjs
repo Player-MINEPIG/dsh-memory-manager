@@ -12,7 +12,7 @@ import {MemoryManager} from '../src/manager.js'
 import {Usage} from '../src/usage.js'
 import {installMvu} from '../src/adapters/mvu.js'
 import * as plugin from '../src/index.js'
-const root=process.env.DSH_MEMORY_MVU,runtime=process.env.DSH_MEMORY_RUNTIME
+const root=process.env.DSH_MEMORY_MVU,runtime=process.env.DSH_MEMORY_RUNTIME,coreRoot=process.env.DSH_MEMORY_CORE
 const loadSource=()=>import(pathToFileURL(join(resolve(root),'packages/mvu-adapter/src/index.js')).href)
 const adapterId='tavern.mvu',cardStrategy=[{operation:'validate_card_update'},{operation:'apply_card_update'}]
 async function setupManager(t,service){
@@ -87,23 +87,25 @@ test('native card transaction rechecks grants and cancellation while manager unl
  })
 })
 
-test('real DSH request and durable MVU reply pass through actual manager usage and observation adapters',{skip:!root||!runtime,timeout:30000},async()=>{
+test('real DSH request and durable MVU reply pass through actual manager usage and observation adapters',{skip:!root||!runtime||!coreRoot,timeout:30000},async()=>{
  const require=createRequire(join(resolve(runtime),'package.json')),load=name=>import(pathToFileURL(require.resolve(name)).href)
  const {Context}=await load('@deepseek-ai/cordis'),{SystemPrompt}=await load('@deepseek-ai/dsh-system-prompt'),llm=await load('@deepseek-ai/dsh-llm'),tavern=await import(pathToFileURL(join(resolve(root),'packages/tavern-loader/src/index.js')).href)
  const ctx=new Context(),dir=await mkdtemp(join(tmpdir(),'manager-mvu-host-')),requests=[],errors=[];let store
  try{
-  for(const id of ['sessionController','workspaceController','directoryPickerController'])ctx.provide(id,{})
+  for(const id of ['sessionController','workspaceController','directoryPickerController'])ctx.provide(id,id==='sessionController'?{inspect:async sessionId=>{const session=ctx.sessions.get(sessionId);return {meta:session.header,events:session.snapshotEvents(),inheritedEventCount:0}}}:{})
   await ctx.plugin(SystemPrompt,{personaPrefix:'SYNTHETIC'})
   for(const n of ['session','agent','session-projection','llm','tools','agent-loop'])await ctx.plugin((await load('@deepseek-ai/dsh-'+n)).default,n==='agent-loop'?{agents:[]}:{} )
   ctx.on('agent/error',e=>errors.push(e.error))
   class Provider extends llm.LlmAdapter{async resolveModel(provider,id){return {provider,id,name:id,systemPromptUpdate:'in-history'}}async *stream(request){requests.push(structuredClone(request.messages));const text="_.add('hp', -5);";yield{type:'block-start',index:0,blockType:'text'};yield{type:'text-delta',index:0,text};yield{type:'block-end',index:0,block:{type:'text',text}};yield{type:'finish',reason:{kind:'stop'}}}}
   ctx.llm.registerAdapter(['test'],new Provider())
   await ctx.plugin(assembler,{storageDir:join(dir,'assembler')})
+  await ctx.plugin((await import(pathToFileURL(join(resolve(coreRoot),'src/plugin.js')).href)).default)
   await ctx.plugin({name:tavern.name,inject:tavern.inject,apply(c){store=tavern.apply(c,{storageDir:join(dir,'tavern'),mvu:{resources:[{id:'mvu:host',sharing:'shared',sessionIds:['*'],managementMode:'managed',initial:{stat_data:{hp:100}}}]}})}})
   const entry={id:'mvu:host',adapterId,type:'mvu-state',whitelist:[{sessionId:'mvu-host'}],blacklist:[],store:{on:'assistant_message_committed',rule:'contains_mvu_update',strategy:[{operation:'parse_mvu_update'},{operation:'validate_update'},{operation:'apply_update'}]},retrieve:{on:'before_model_request',rule:true,strategy:[{operation:'read_content'},{operation:'render_state_and_update_instructions'},{operation:'provide_to_model'}]}}
   await writeFile(join(dir,'config.json'),JSON.stringify({schemaVersion:1,revision:1,entries:[entry],presets:{}}));const managerPlugin=ctx.plugin(plugin,{storageDir:dir});await managerPlugin
   const {agent}=await ctx.agents.create({sessionId:'mvu-host',agentOptions:{provider:'test',model:'test'}}),service=ctx.tavernMvu,m=ctx.dshMemoryManager
-  const preset=store.assemblyPresets.save({...store.assemblyPresets.get('builtin-cache'),rules:[...store.assemblyPresets.get('builtin-cache').rules.map(r=>r.kind==='native-system'?{...r,enabled:false}:r),{id:'mvu',kind:'tavern.mvu/state',role:'system',lifetime:'request'}]});store.assemblyPresets.apply(agent.id,preset.id)
+  const base=store.assemblyPresets.get('builtin-st')
+  const preset=store.assemblyPresets.save({...base,rules:[...base.rules.map(r=>r.kind==='native-system'?{...r,enabled:false}:r),{id:'mvu',kind:'tavern.mvu/state',role:'system',lifetime:'request'}]});store.assemblyPresets.apply(agent.id,preset.id)
   const turn=async text=>{agent.followup(llm.createUserMessage({content:[{type:'text',text}],source:{kind:'user'}}));await agent.whenIdle();await service.flush();assert.deepEqual(errors,[])}
   await turn('ONE');assert(requests[0].some(m=>m.content.some(b=>b.text?.startsWith('{"hp":100}'))))
   assert.equal((await m.read({adapterId,id:'mvu:host',scope:{sessionId:agent.id}})).content.stat_data.hp,95)

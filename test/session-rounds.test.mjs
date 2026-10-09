@@ -48,3 +48,31 @@ test('no fabricated turn, no wildcard unknown turn, and no mutation of observati
  assert.deepEqual(roundRows(data,'no-source-turn',['past']),[])
  assert.deepEqual(data,before)
 })
+
+
+test('real turns remain visible with no resources or after resource filters remove every row',async t=>{
+ const manager=new MemoryManager({configPath:'/unused'});t.after(()=>manager.dispose())
+ const events=[{type:'turn/start',data:{turn:1}},{type:'turn/end',data:{turn:1}},{type:'turn/start',data:{turn:3}}]
+ const before=structuredClone(events);let reads=0
+ manager.readSessionEvents=async sessionId=>{assert.equal(sessionId,'self');reads++;return events}
+ let data=await manager.query({scope:{sessionId:'self'}})
+ assert.deepEqual(data.rows,[]);assert.deepEqual(data.facets.turns,['1','3'])
+ assert.deepEqual(sessionRounds(data).map(group=>group.turn),['3','1'],'an empty first turn must not disappear; gaps are not fabricated')
+ assert.deepEqual(roundRows(data,'1'),[])
+ manager.registerAdapter({id:'own',authority:'fixture',catalogScope:'all-sessions',list:()=>[{id:'resource',type:'text'}],read:()=>{throw Error('query must not read bodies')}})
+ manager.recordTrace({adapterId:'own',id:'resource',sessionId:'self',turn:3,eventId:'use',mode:'retrieve',phase:'applied',evidence:'request-included'})
+ data=await manager.query({scope:{sessionId:'self'}})
+ assert.deepEqual(sessionRounds(data).map(group=>group.turn),['3','1']);assert.equal(roundRows(data,'1')[0].facts.length,0)
+ data=await manager.query({scope:{sessionId:'self'},adapterId:'filtered-out'})
+ assert.deepEqual(data.rows,[]);assert.deepEqual(data.facets.turns,['1','3'])
+ assert.deepEqual(sessionRounds(data,['1']).map(group=>group.turn),['1'])
+ assert.equal(reads,3);assert.deepEqual(manager.traces.map(f=>f.turn),[3]);assert.deepEqual(events,before,'querying does not create activity for an empty turn')
+ assert.deepEqual((await manager.query()).facets.turns,['3'],'global queries do not borrow a session timeline')
+})
+
+test('only actual turn starts establish an otherwise empty turn',async t=>{
+ const manager=new MemoryManager({configPath:'/unused'});t.after(()=>manager.dispose())
+ manager.readSessionEvents=async()=>[{type:'turn/start',data:{turn:1}},{type:'turn/start',data:{turn:1}},{type:'turn/start',data:{turn:0}},{type:'turn/start',data:{turn:-1}},{type:'turn/start',data:{turn:2.5}},{type:'turn/start',data:{turn:'2'}},{type:'step/start',data:{turn:9}}]
+ const data=await manager.query({scope:{sessionId:'self'}})
+ assert.deepEqual(data.facets.turns,['1']);assert.deepEqual(manager.traces,[])
+})

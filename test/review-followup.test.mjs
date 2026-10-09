@@ -71,7 +71,8 @@ test('worldbook catalog includes explicit, effective and historical public resou
   const adapter=tavernWorldBooks({baseUrl:'http://127.0.0.1:1',fetchImpl:async url=>({ok:true,json:async()=>({ok:true,...fixture[new URL(url).pathname.replace('/pmp-dsh-tavern/api/v1','')]})})})
   const rows=await adapter.list({scope:{sessionId:'synthetic'}})
   assert.deepEqual(rows.map(x=>x.id).sort(),['world-book:effective','world-book:explicit','world-book:historical'])
-  assert.equal(rows.find(x=>x.id==='world-book:historical').facts[0].phase,'triggered')
+  assert.equal(rows.find(x=>x.id==='world-book:historical').facts[0].phase,'completed')
+  assert.equal(rows.find(x=>x.id==='world-book:historical').facts[0].evidence,'source-evaluated')
 })
 
 test('virtual skill content changes keep entity identity while changing revision',async()=>{

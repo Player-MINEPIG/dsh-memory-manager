@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Memory Manager 架构",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1380,
+      760
+    ]
+  },
+  "components": [
+    {
+      "id": "manager-ui",
+      "type": "frontend",
+      "label": "设置与会话视图",
+      "sublabel": "资源 / 配置 / 预设 / 观察",
+      "pos": [
+        40,
+        330
+      ],
+      "size": [
+        230,
+        78
+      ]
+    },
+    {
+      "id": "manager-api",
+      "type": "backend",
+      "label": "Manager HTTP API",
+      "sublabel": "connection.admit / JSON",
+      "pos": [
+        390,
+        330
+      ],
+      "size": [
+        230,
+        78
+      ]
+    },
+    {
+      "id": "manager-core",
+      "type": "backend",
+      "label": "MemoryManager",
+      "sublabel": "身份 / CAS / 配置与使用租约",
+      "pos": [
+        740,
+        330
+      ],
+      "size": [
+        230,
+        78
+      ]
+    },
+    {
+      "id": "source-authorities",
+      "type": "external",
+      "label": "资源权威提供方",
+      "sublabel": "Skills / Tavern / 第三方",
+      "pos": [
+        1090,
+        330
+      ],
+      "size": [
+        230,
+        78
+      ]
+    },
+    {
+      "id": "manager-config",
+      "type": "database",
+      "label": "Manager 持久目录",
+      "sublabel": "config.json / observations.json",
+      "pos": [
+        740,
+        100
+      ],
+      "size": [
+        230,
+        78
+      ]
+    },
+    {
+      "id": "usage-policies",
+      "type": "backend",
+      "label": "Usage 与能力目录",
+      "sublabel": "conditions / operations / defaults",
+      "pos": [
+        740,
+        590
+      ],
+      "size": [
+        230,
+        78
+      ]
+    },
+    {
+      "id": "optional-assembly",
+      "type": "external",
+      "label": "可选请求 adapter",
+      "sublabel": "位于 assembler 仓库",
+      "pos": [
+        1090,
+        590
+      ],
+      "size": [
+        230,
+        78
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "manager-ui-manager-api",
+      "to": "manager-api",
+      "label": "查询与显式保存",
+      "variant": "emphasis",
+      "from": "manager-ui"
+    },
+    {
+      "id": "manager-api-manager-core",
+      "to": "manager-core",
+      "label": "公开管理原语",
+      "variant": "default",
+      "from": "manager-api",
+      "labelDy": 63
+    },
+    {
+      "id": "manager-core-source-authorities",
+      "to": "source-authorities",
+      "label": "list / read / 授权写入",
+      "variant": "default",
+      "from": "manager-core",
+      "labelDy": 63
+    },
+    {
+      "id": "manager-core-manager-config",
+      "to": "manager-config",
+      "label": "配置 CAS / 有界观察",
+      "variant": "default",
+      "from": "manager-core"
+    },
+    {
+      "id": "manager-core-usage-policies",
+      "to": "usage-policies",
+      "label": "规则与来源委托",
+      "variant": "default",
+      "from": "manager-core",
+      "labelAt": [
+        855,
+        505
+      ]
+    },
+    {
+      "id": "usage-policies-optional-assembly",
+      "to": "optional-assembly",
+      "label": "只读 retrieve",
+      "variant": "dashed",
+      "from": "usage-policies"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "可选扩展",
+      "items": [
+        "Tavern / assembler 不依赖 Manager。"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "正文归来源",
+      "items": [
+        "Manager 管规则与观察，不复制中心正文库。"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "卸载与重装",
+      "items": [
+        "兼容来源撤销委托并恢复默认；配置保留。"
+      ]
+    }
+  ]
+}

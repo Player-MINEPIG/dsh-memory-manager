@@ -1,93 +1,64 @@
-# DSH Memory Manager · 记忆管理
+# DSH Memory Manager · 记忆管理 v1.0.0
 
-统一查看持久化资源、编辑来源支持的内容，并用 `on / rule / strategy / preset` 管理资源如何使用。来源系统继续持有内容、版本、历史和写入权限；本插件不复制任务账本，不内置向量数据库、总结模型或任务执行引擎。
+[English](README_en.md) · [安装](docs/INSTALLATION.md) · [使用](docs/USAGE.md) · [API](docs/API.md) · [版本记录](CHANGELOG.md)
 
-DSH 原生全局 Settings「记忆管理」与会话「记忆管理」页签共用资源表格，管理配置和筛选分别在同一内容区域的独立页面打开。全局筛选配置字段与资源提供方；会话另有轮次、轮次来源和触发状态。筛选状态为「未记录触发」「曾触发」「正在触发」；来源报告应用证据时，资源行显示「已应用」；来源明确跳过时显示「策略跳过」与当次原因。没有记录不能证明没有使用；来源原生执行也不要求存在管理配置。预览、目录可用、读取成功都不等于模型已使用。
-
-会话中的记忆管理使用与 Trace 同层的「记忆管理」页签。顶部不再提供重复按钮；尚未发送消息等核心不显示会话页签的状态也不增加替代入口。全局资源与配置仍可从设置中的「记忆管理」查看。
-
-含本插件的会话页签使用紧凑间距；窄屏可横向滚动选择页签。会话资源表格也可在表格内部横向滚动。
+统一查看资源、编辑管理配置，并按会话轮次查看存储与读取是否触发。来源继续拥有正文、身份、版本、权限和写入；DSH 持久会话历史保持权威。Manager 保存配置和有界观察记录，不建立第二份正文库或任务账本。
 
 ## 安装
 
-目标 DSH `0.2.0-rc.2`、Node.js 22 或更新版本。源码通过[私有 GitHub 仓库](https://github.com/Player-MINEPIG/dsh-memory-manager)提供，需要仓库访问权限；未发布到 npm。Tavern 与 assembler 均不依赖本插件。
+目标为 DSH `0.2.0-rc.2`，Node.js `^22.19.0 || >=24`。通过 GitHub 安装；受限仓库需要访问权限。
 
 ```sh
-dsh plugin --profile web add github:Player-MINEPIG/dsh-memory-manager#main
+dsh plugin --profile web add github:Player-MINEPIG/dsh-memory-manager#codex/assembler-integration
 ```
 
-包同时提供 `dsh.bundle`、`cordis.patch.yml` 和预构建 client。默认配置位于 `$DSH_HOME/dsh-memory-manager/config.json`。可在详情页校验并保存本地条目，成功保存会自动递增 `revision`。手动编辑文件可参考 [examples/config.json](examples/config.json)，修改后递增 `revision`，再点击「重新读取管理配置」。未修改文件时重复读取为正常无操作。首次安装缺少配置文件时安全创建空的本地覆盖文件；来源默认规则作为独立底层生效。损坏或不兼容的已有配置显示错误，不悄悄覆盖。旧有效值保留供查看；托管执行在错误期间被阻止。
+重启所选 Host，从设置中的「记忆管理」管理全局资源，或从会话「记忆管理」页签查看当前会话。包包含 DSH bundle 和预构建客户端。配置默认在 `$DSH_HOME/dsh-memory-manager/config.json`，正文仍从来源读取。升级与卸载见[安装文档](docs/INSTALLATION.md)。
 
-卸载用 `dsh plugin --profile web remove dsh-memory-manager`。支持下述默认委托合同的来源在 Manager 注册期间报告并使用 managed 决策，卸载同步撤销旧租约，之后的新请求恢复 Tavern / 来源默认；来源资源不删除。旧来源没有该合同，界面明确标出默认规则不可用，保留其既有模式行为。
+## 配置与预设
 
-## 资源与使用
+配置页按左、中、右显示「当前值」「是否跟随来源」「来源默认值」，分割线留有间距。没有覆盖的字段直接使用来源值，也可逐字段选择跟随来源。固定资源由来源保存、内容随固定资源变动，同样是存储行为，界面明确说明。
 
-- 同一个 `id` 是同一个实体和同一份当前内容。复制必须生成新 ID；作用域不能隐式创建副本。
-- `type` 由来源定义并校验内容结构；`content` 从权威来源读取，不另存一份。
-- 默认白名单为空；至少命中一条白名单且没有命中黑名单才适用。适用性不是访问授权。
-- `store/retrieve.on` 定义检查时机；`rule` 支持 `all/any/not/at_least` 和已注册条件；`strategy` 是一个操作或顺序操作链。
-- preset 持续覆盖明确提供的字段。名单、规则树、操作链整体替换；空值与未提供不同。`id/content` 不被覆盖。UI 展示字段来源。
-- 来源原生管理、已委托管理、托管但不适用是不同状态。已托管资源缺配置时拒绝执行。
+有效配置按来源默认 → 本地字段 → 引用预设合成，再对明确跟随来源的字段取实时来源默认；其他预设字段继续生效。显式空值与未提供字段不同。管理配置保存与正文编辑分开，经过来源校验、revision 与磁盘 CAS；冲突保留草稿。
 
-当前 Tavern 的原生卡片变量操作由来源的执行开关、绑定、写授权、CAS 与 schema 管理，不再请求 memory-manager 的 store/retrieve 许可。Manager 仍观察原生卡片的执行事实（`configRevision:null`），并管理模型请求读取与助手回复更新。旧卡片交互策略不再作为新默认项提供；已有配置保留查看，但不控制原生执行，不支持的导入或保存会拒绝。历史气泡不能提升到当前可写范围。
+存取预设支持新建、编辑、导入、导出和 adapter 默认组合的本地覆盖。JSON 规则与策略只选择可信 Host 注册能力，不执行配置中的 JavaScript。详见[选项目录](docs/OPTIONS.md)、[预设](docs/PRESETS.md)和[配置示例](examples/config.json)。
 
-Current Tavern native card writes use source execution switches, active bindings, grants, CAS and schema validation. Manager policies govern model reads and assistant updates; they observe native card facts without granting or blocking them. Legacy card policy definitions remain readable but are no longer offered as defaults, and unsupported imports/saves are rejected.
+## 本轮存取状态
 
-详情页通过独立选项页编辑类型、预设、名单、存储和读取字段，支持搜索、来源/预设筛选、参数控件、条件树和顺序操作链。未知参数原样保留并允许明确替换；管理配置无需手输 JSON。「存取预设」页提供新建、编辑、导入和导出，adapter 默认组合可保存为本地覆盖；[存取预设文档](docs/PRESETS.md)说明文件格式与整批拒绝规则。完整能力、内置预设与本地声明扩展示例见 [选项与扩展文档](docs/OPTIONS.md)。不会运行配置文件中的 JS。可信 Host 插件可注册条件/操作。时间检查点可接同一触发协议；主动唤醒 Agent 还需宿主调度与授权，本插件不建立后台任务循环。
+真实 DSH `turn/start` 记录建立轮次目录。没有活动、没有资源或筛选后无可见资源的轮次均保留；不补造缺失轮次。每轮分别统计存储和读取，不显示跨轮次曾触发状态。未知轮次发起方式隐藏。
 
-## 可选适配
+| 状态 | 判定 |
+| --- | --- |
+| 读取已触发 | 内容已核验进入本轮实际 DSH 请求 |
+| 存储已触发 | 来源确认本轮写入已提交 |
+| 处理中 / 已跳过 | 当前执行活动或明确跳过回执 |
+| 未记录触发 | 没有本轮对应操作记录，不能据此判断未使用 |
+| 未确认 | 有活动但证据不足，或发生失败、中断 |
 
-| 来源 | 当前能力 | 边界 |
-| --- | --- | --- |
-| DSH Skills | 目录与正文读取；会话查询使用真实 Agent scope | 优先会话 preset registry，未知会话不回退全局；无编辑接口，明确只读 |
-| Tavern 世界书 / Prompt Template | `tavernMemorySources` v1 的目录、正文、来源 CAS 与 native/managed 策略桥 | 仅声明来源已实现的固定读取链；模板为只读求值子集，世界书独立库与内嵌资源以来源实际声明的能力为准。旧 HTTP 世界书桥明确只读 |
-| Tavern MVU v1 | 公开服务包装、CAS 编辑、使用决策、真实事件观察；原生卡片写入由来源独立授权 | 需要提供 `tavernMvu` v1 的 Tavern 版本；不把旧 Tavern 当作已兼容 |
-| 独立 assembler 来源协议 v1 | `memory-manager.resources` 只读来源，版本化块标识；adapter 由 assembler 维护 | 需支持 request assembly v1 的 DSH core；用户自行选择装配来源；不会自动改预设 |
-| TaskSystem | scope/authority/使用协议兼容边界 | 本版本没有 TaskSystem adapter，不开放额外模型工具或放宽 guard |
+正文读取成功、规则命中、预览均不单独计为读取触发。详情分别展示这些事实；进入 DSH 请求也不证明网络送达或模型采用。标准/native 路径观察 Skill 工具与显式指令；世界书、MVU、模板通过公开来源回执和核验历史请求引用补充证据，缺少引用时不靠当前预览推断过去。
 
-世界书 HTTP 适配默认不启用。共装同一隔离 Host 时可在 profile patch 配置：
+## 可选来源
 
-```yaml
-- id: dsh-memory-manager
-  config:
-    storageDir: !!js dshHomePath('dsh-memory-manager')
-    tavernBaseUrl: http://127.0.0.1:3080
-```
+| 来源 | 能力与边界 |
+| --- | --- |
+| DSH Skills | 合并 Host 与已加载 Agent 目录；会话使用真实 preset/cwd，优先 preset registry。目录与正文只读，会话 Agent 不可用时不回退全局 |
+| Tavern 世界书 / Prompt Template | 可选 `tavernMemorySources` v1 服务提供目录、默认、绑定与固定执行链；正文读写以来源能力为准 |
+| Tavern MVU | 可选 `tavernMvu` v1 服务提供状态读取、CAS 编辑、决策和观察；原生卡片写入仍由 Tavern 独立授权 |
+| Prompt Assembler | 独立仓库维护可选 `memory-manager.resources` adapter；用户显式选择装配策略，Manager 不自动改策略 |
+| 第三方资源 | 公开 adapter、condition、operation 与来源决策合同；本版本没有 TaskSystem adapter |
 
-HTTP 地址只接受明确配置的 loopback origin。管理路由使用 DSH `connection.admit` 原有 Host/Origin 与浏览器认证，认证服务缺失时不开放路由。来源错误或卸载会显式显示，不把旧内容当作当前值。MVU 与装配来源通过可选 Cordis 服务自动发现，核心和两面板无需 Tavern。独立记忆面板和 Skill 读取可在官方 DSH 0.2.0-rc.2 使用；Tavern 完整请求注入另需 prepared Session/AgentLoop 核心扩展，stock RC2 会明确拒绝装配策略。运行时与验收范围见 [验证说明](docs/VALIDATION.md)。
+Skill 是资源类型，来源表示加载渠道和目录，不要求归属于插件。当前 adapter 从 DSH 技能注册表识别资源，保存 `provider`；完整目录来源尚未展示。文件 Skill 使用提供方、路径和名称形成身份；虚拟 Skill 可声明 `metadata.dshResourceIdentity`。无稳定身份者只可查看，不能持久绑定规则。
 
-文件 Skill 用来源路径形成身份。虚拟 Skill 可在 `metadata.dshResourceIdentity` 声明 `{version:1, namespace:"your.source", id:"your-resource"}`；实体 ID 只由此身份决定，正文只影响 revision。声明必须由来源维护，copy 使用新 id，独立 shadow 使用独立 id。没有声明的虚拟 Skill 仅提供当前查看周期的临时句柄、诊断和 `bind:false` 能力，禁止持久绑定配置；不会将正文、会话或 registry 对象伪装成持久身份。
+Manager 没有 Tavern/assembler 生产依赖，可独立用于原生 DSH。标准/native 观察与可选 request-assembly 协议 1 接入是不同路径：通用请求装配需要显式 prepared core 能力，安装 Manager 不修改核心。旧世界书 HTTP 桥默认关闭、仅接受显式 loopback 地址且只读。来源失效显示诊断。
 
-注册与使用协议见 [docs/API.md](docs/API.md)。验证范围与复现步骤见 [docs/VALIDATION.md](docs/VALIDATION.md)。MIT 许可。Awesome 列表的公开仓库年龄、真实提交数量、topic、维护和收录审核属于外部条件；本地可安装不代表已满足这些条件。
+卸载保留配置、来源正文和 DSH 历史；兼容来源撤销委托，为后续操作恢复默认。重装重新采用保留规则。Manager 不提供向量引擎、总结模型或主动唤醒任务循环。
 
-## English
+## 开发与文档
 
-A resource manager and usage protocol for DSH. Providers remain authoritative for content, revision, permissions and atomic writes. Two native panels expose configuration provenance and actual usage evidence. JSON policies use explicit timing, composable rules, trusted operation chains and continuously overriding presets. Optional adapters live in this repository; source systems do not depend on the manager. No vector engine, summarizer, task ledger copy or autonomous scheduler is included. The separate preset library supports create/edit/import/export, including editable adapter defaults and atomic rejection of invalid imports; see [preset documentation](docs/PRESETS_en.md). This is an unpublished local development build; browser acceptance and cross-plugin integration must be reported separately from unit tests.
+本仓库与 `dsh-prompt-assembler` 放在同一父目录，运行 `npm ci`、`npm run check`、`npm run pack:check`。assembler 仅为开发测试依赖。真实 Host 检查使用合成模型提供方；环境变量和浏览器检查见[兼容性验证](docs/VALIDATION_zh-CN.md)。
 
-### 筛选与配置重读
+- [使用与状态解释](docs/USAGE.md)
+- [开发者指南](docs/DEVELOPER_GUIDE.md)与[API](docs/API.md)
+- [架构与交互图](docs/ARCHITECTURE.md)
+- [assembler 接入](docs/ASSEMBLER.md)与[无会话预览](docs/SOURCE_PREVIEW.md)
 
-全局面板筛选资源提供方与全部配置字段（ID、类型、预设、白/黑名单、store/retrieve 的 on/rule/strategy）；轮次、轮次来源、触发状态属于会话面板。筛选均可多选，同一项内满足任一选择，不同项同时满足，清空选择即不限；返回表格保留筛选与滚动位置，徽标统计启用维度；切换会话或重新打开面板时重置。筛选使用含预设覆盖的生效配置；复杂值通过已命名选项或组合控件选择，按规范值精确匹配，不执行规则。资源提供方按 `adapterId` 路由到来源，属于管理接入信息，不是用户内容字段，也不是 `preset`。`preset` 持续覆盖其明确提供的配置字段。
-
-「重新读取管理配置」读取服务端已保存的规则与预设。未改动显示“已是最新”；改动必须带更高配置版本，通过校验后才生效。失败保留原有效配置，不自动改版本。配置与选项目录分别完成加载；读取请求超过 30 秒显示读取超时与重试入口，不把超时判为来源已卸载，保存请求不套用此超时。查询范围及提供方返回数量可帮助区分没有资源、筛选无匹配和来源读取失败。全局技能注册表不会自动汇总会话目录，安装提供方也不代表此范围已有技能。
-
-### 本地配置编辑
-
-详情展示资源身份、本地值、生效值及默认/本地/预设来源。未配置资源的管理字段显示“未配置”，来源的类型元数据另行标注。ID 与 adapterId 只读；复制资源生成独立新 ID，内容从来源单独读写。保存只更新该本地条目，不修改预设定义，也不把预设覆盖后的值写回本地。
-
-校验只检查 JSON、来源配置合同及注册能力，不读取资源或运行事件、规则、操作。未注册/不支持能力明确报错，事件上下文、资源存在性与权限仍标记为运行时未验证。通过校验不授予权限或自动委托管理。页面草稿不会持久保存，离开时提示。
-
-保存重新校验、比较编辑版本和磁盘内容，写入同目录临时文件并原子替换，成功后版本加一；冲突或失败保留现行配置与草稿。插件内写入串行化；外部编辑器需遵守 revision 协议，不能把本地文件系统当作跨任意进程的事务数据库。
-
-DSH 原生来源默认对所有会话可见，使用原生来源的会话目录与可见性约束；显式禁用和名单/规则的执行限制继续有效。Tavern 卡附属来源只显示 `listBound` 确认的当前绑定资源。角色卡的内嵌世界书和 MVU 状态随当前所属卡；独立世界书、预设/Persona 关联世界书和模板按来源的实际会话绑定返回。名单规则与旧 Trace 不建立资源绑定。未配置管理规则的已绑定资源仍可见；要求实际绑定的来源版本缺少绑定目录时显示“绑定未确认”与原因，不退回全局扫描。全局设置仍用于管理全局目录与本地规则。本插件不添加跨卡启用功能或创建 MVU 实例。
-
-## 来源默认与本地覆盖
-
-支持 `getManagementDefaults({id,scope?})` 的来源提供可撤销的默认规则快照。Manager 不枚举资源来生成规则文件，也不生成全会话白名单。默认绑定、资源选择与现有权限仍由来源检查。来源默认 → 本地字段 → 已引用预设字段依次合成；显式空白名单、空模式对象与拒绝条件保留。列表、详情、校验和真实委托决策使用同一结果，并显示来源报告的当前托管方和配置错误原因。
-
-详情页「恢复来源默认配置」只清除该资源的规则、范围覆盖与预设引用，并把规则路由恢复到正文来源；未知非配置字段保留，不修改他人的全局预设或资源正文。按钮先更新草稿并预览有效默认值，点击「保存管理配置（写入文件）」后经原有 CAS 生效。正文保存与这些管理规则分开。MVU 卡片写入继续由来源现有 grant、范围、schema、CAS 与撤销机制管理；默认委托不自动提供新的卡片写权限。
-
-## 独立 assembler 接入
-
-请求装配 adapter 在独立 `dsh-prompt-assembler` 仓库维护。Manager 不依赖该包运行；assembler adapter 通过公开 `requestAssemblyResources()` 和 `trigger()` 读取资源与配置，不访问 Manager 私有文件。接入、卸载和 applied 证据见 [接入协议](docs/ASSEMBLER.md)。
-
-开发测试将两个仓库放在同一父目录（`dsh-memory-manager` 与 `dsh-prompt-assembler`），再执行 `npm ci` 和 `npm run check`。assembler 仅为测试开发依赖，不进入 Manager 的生产依赖。
+MIT 许可。

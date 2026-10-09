@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Memory Manager architecture",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1380,
+      760
+    ]
+  },
+  "components": [
+    {
+      "id": "manager-ui",
+      "type": "frontend",
+      "label": "Settings / session view",
+      "sublabel": "Resources / policy / observations",
+      "pos": [
+        40,
+        330
+      ],
+      "size": [
+        230,
+        78
+      ]
+    },
+    {
+      "id": "manager-api",
+      "type": "backend",
+      "label": "Manager HTTP API",
+      "sublabel": "connection.admit / JSON",
+      "pos": [
+        390,
+        330
+      ],
+      "size": [
+        230,
+        78
+      ]
+    },
+    {
+      "id": "manager-core",
+      "type": "backend",
+      "label": "MemoryManager",
+      "sublabel": "Identity / CAS / policy leases",
+      "pos": [
+        740,
+        330
+      ],
+      "size": [
+        230,
+        78
+      ]
+    },
+    {
+      "id": "source-authorities",
+      "type": "external",
+      "label": "Resource authorities",
+      "sublabel": "Skills / Tavern / third parties",
+      "pos": [
+        1090,
+        330
+      ],
+      "size": [
+        230,
+        78
+      ]
+    },
+    {
+      "id": "manager-config",
+      "type": "database",
+      "label": "Manager storage",
+      "sublabel": "config.json / observations.json",
+      "pos": [
+        740,
+        100
+      ],
+      "size": [
+        230,
+        78
+      ]
+    },
+    {
+      "id": "usage-policies",
+      "type": "backend",
+      "label": "Usage / capability catalog",
+      "sublabel": "Conditions / operations / defaults",
+      "pos": [
+        740,
+        590
+      ],
+      "size": [
+        230,
+        78
+      ]
+    },
+    {
+      "id": "optional-assembly",
+      "type": "external",
+      "label": "Optional request adapter",
+      "sublabel": "Owned by assembler repository",
+      "pos": [
+        1090,
+        590
+      ],
+      "size": [
+        230,
+        78
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "manager-ui-manager-api",
+      "to": "manager-api",
+      "label": "Query / explicit saves",
+      "variant": "emphasis",
+      "from": "manager-ui"
+    },
+    {
+      "id": "manager-api-manager-core",
+      "to": "manager-core",
+      "label": "Public manager primitives",
+      "variant": "default",
+      "from": "manager-api",
+      "labelDy": 63
+    },
+    {
+      "id": "manager-core-source-authorities",
+      "to": "source-authorities",
+      "label": "List / read / authorized writes",
+      "variant": "default",
+      "from": "manager-core",
+      "labelDy": 63
+    },
+    {
+      "id": "manager-core-manager-config",
+      "to": "manager-config",
+      "label": "Policy CAS / bounded observations",
+      "variant": "default",
+      "from": "manager-core"
+    },
+    {
+      "id": "manager-core-usage-policies",
+      "to": "usage-policies",
+      "label": "Policy / source delegation",
+      "variant": "default",
+      "from": "manager-core",
+      "labelAt": [
+        855,
+        505
+      ]
+    },
+    {
+      "id": "usage-policies-optional-assembly",
+      "to": "optional-assembly",
+      "label": "Read-only retrieve",
+      "variant": "dashed",
+      "from": "usage-policies"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Optional extension",
+      "items": [
+        "Tavern / assembler do not require Manager."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Bodies remain source-owned",
+      "items": [
+        "Manager owns policies and observations, not a central body store."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Unload / reinstall",
+      "items": [
+        "Compatible sources revoke delegation and restore defaults; policies remain."
+      ]
+    }
+  ]
+}

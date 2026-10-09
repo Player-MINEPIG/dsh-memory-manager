@@ -24,7 +24,15 @@ export function removeModeFrom(form,mode){
 }
 export function restoreSourceDefaults(form,row){
  const restored=removeModeFrom(removeModeFrom(form,'store'),'retrieve')
- return {...restored,adapterId:row.adapterId,__presetPresent:false,type:'',preset:'',whitelist:'',blacklist:''}
+ const base={...restored.__base};delete base.followSource
+ return {...restored,__base:base,adapterId:row.adapterId,__presetPresent:false,type:'',preset:'',whitelist:'',blacklist:''}
+}
+export function followField(form,field,following,value){
+ const next={...form,__base:structuredClone(form.__base)},markers=new Set(next.__base.followSource??[])
+ if(following){markers.add(field);next[field]='';const mode=field.split('.')[0];if(['store','retrieve'].includes(mode))next['__'+mode+'Present']=false}
+ else{markers.delete(field);next[field]=value===undefined?'':field==='type'?value:JSON.stringify(value)}
+ if(markers.size)next.__base.followSource=[...markers];else delete next.__base.followSource
+ return next
 }
 export function effectiveDraftType(form,presets=[]){
  const preset=presets.find(p=>p.id===form.preset)?.configuration

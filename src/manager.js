@@ -9,6 +9,10 @@ import {ScopeDirectory} from './scope-directory.js'
 import {adapterCatalog,setAdapterEnabled} from './adapter-controls.js'
 import {sessionCatalog} from './session-catalog.js'
 import {sourceConfiguration,policyApplies} from './source-defaults.js'
+import {assemblyObservations,mergeObservations} from './assembly-observations.js'
+import {recordedSessionTurns} from './session-turns.js'
+import {observationMode,withObservationMode} from './observation-modes.js'
+const activityKey=event=>JSON.stringify([event.adapterId,event.id,event.sessionId,event.requestId??event.eventId,...(observationMode(event)?[observationMode(event),event.eventId]:[])])
 export class MemoryManager {
   scopeDirectory=new ScopeDirectory();disabledAdapters=new Set()
   requestAssemblyResources() {
@@ -24,7 +28,7 @@ export class MemoryManager {
   adapters=new Map(); lifetimes=new Map(); owners=new Map(); reservations=new Map(); traces=[]; active=new Map(); diagnostics=[]; pending=Promise.resolve()
   constructor({configPath,journalPath}) {this.configuration=new Configuration(configPath);this.journalPath=journalPath}
   async init({createIfMissing=false}={}) {
-    if(this.journalPath) try {const rows=JSON.parse(await readFile(this.journalPath,'utf8'));if(!Array.isArray(rows)) throw Error('Invalid trace journal');this.traces=rows.slice(-2000);for(const event of this.traces)if(event.phase==='started'&&!this.traces.some(t=>t.id===event.id&&t.adapterId===event.adapterId&&t.sessionId===event.sessionId&&(t.requestId??t.eventId)===(event.requestId??event.eventId)&&['completed','failed','applied','skipped'].includes(t.phase)))event.interrupted=true} catch(e) {if(e.code!=='ENOENT')this.diagnostics.push({code:'JOURNAL_ERROR',message:e.message})}
+    if(this.journalPath) try {const rows=JSON.parse(await readFile(this.journalPath,'utf8'));if(!Array.isArray(rows)) throw Error('Invalid trace journal');this.traces=rows.slice(-2000);for(const event of this.traces)if(event.phase==='started'&&!this.traces.some(t=>t.id===event.id&&t.adapterId===event.adapterId&&t.sessionId===event.sessionId&&activityKey(t)===activityKey(event)&&['completed','failed','applied','skipped'].includes(t.phase)))event.interrupted=true} catch(e) {if(e.code!=='ENOENT')this.diagnostics.push({code:'JOURNAL_ERROR',message:e.message})}
     try {await this.reload()} catch(error) {
       if(createIfMissing&&error.code==='ENOENT')try{await this.configuration.createIfMissing();await this.reload()}catch{/* Visible; managed execution remains blocked. */}
     }
@@ -54,7 +58,7 @@ export class MemoryManager {
   async mutate(adapter,method,args,ids,expectedId){
     args.signal?.throwIfAborted();this.lifetimes.get(adapter)?.signal.throwIfAborted()
     const release=this.reserve(adapter,ids);let received=false
-    try{const result=await this.invoke(adapter,method,args);received=true;this.claim(adapter,result,expectedId);release();return clone(result)}
+    try{const result=await this.invoke(adapter,method,args);received=true;this.claim(adapter,result,expectedId);this.usage?.observeWrite(adapter,args,result);release();return clone(result)}
     catch(error){
       const rejected=!received&&(error.committed===false||['VALIDATION_FAILED','REVISION_CONFLICT','IDEMPOTENCY_CONFLICT','READ_ONLY','NOT_FOUND','FORBIDDEN'].includes(error.code))
       release(!rejected)
@@ -67,12 +71,15 @@ export class MemoryManager {
     for(const entry of doc.entries) {const a=this.adapters.get(entry.adapterId);if(a?.validateConfig) await a.validateConfig(this.getConfig(entry.id,{document:doc}).config)}
   })}
   recordTrace(input) {
-    const event=clone(input)
+    const raw=clone(input)
+    if(raw.evidence!==undefined&&!['content-read','request-included','write-committed','source-evaluated'].includes(raw.evidence))fail('INVALID_TRACE','Unsupported observation evidence')
+    if(raw.mode!==undefined&&!['store','retrieve'].includes(raw.mode))fail('INVALID_TRACE','Observation mode must be store or retrieve')
+    const event=withObservationMode(raw)
     if((!this.adapters.has(event.adapterId)&&!(['failed','completed'].includes(event.phase)&&this.traces.some(t=>t.adapterId===event.adapterId&&t.eventId===event.eventId&&t.id===event.id)))||!event.id||!event.eventId||!['started','triggered','applied','skipped','failed','completed'].includes(event.phase)) fail('INVALID_TRACE','Trace requires registered adapter, id, eventId and phase')
     if(JSON.stringify(event).length>32000)fail('INVALID_TRACE','Observation exceeds 32 KB')
-    if(this.traces.some(t=>t.adapterId===event.adapterId&&t.id===event.id&&t.sessionId===event.sessionId&&t.requestId===event.requestId&&t.eventId===event.eventId&&t.phase===event.phase)) return
+    if(this.traces.some(t=>t.adapterId===event.adapterId&&t.id===event.id&&t.sessionId===event.sessionId&&t.requestId===event.requestId&&t.eventId===event.eventId&&observationMode(t)===observationMode(event)&&t.phase===event.phase)) return
     event.at=Date.now();event.turnKind??='unknown'
-    const key=JSON.stringify([event.adapterId,event.id,event.sessionId,event.requestId??event.eventId])
+    const key=activityKey(event)
     if(event.phase==='started') this.active.set(key,event)
     if(['completed','failed','applied','skipped'].includes(event.phase)) this.active.delete(key)
     this.traces.push(event);this.traces=this.traces.slice(-2000)
@@ -110,17 +117,21 @@ export class MemoryManager {
     }
     if(!bound)for(const entry of this.configuration.document.entries) if(matches(sources,entry.sourceAdapterId??entry.adapterId)&&!records.some(r=>r.id===entry.id)) records.push({id:entry.id,type:entry.type,adapterId:entry.sourceAdapterId??entry.adapterId,missing:true,capabilities:{edit:false,copy:false}})
     const inScope=t=>!scope.sessionId||t.sessionId===scope.sessionId
+    let history=[],sessionTurns=[]
+    if(scope.sessionId&&this.readSessionEvents)try{const events=await this.readSessionEvents(scope.sessionId,signal);sessionTurns=recordedSessionTurns(events);history=assemblyObservations(events,scope.sessionId)}catch(error){signal?.throwIfAborted();diagnostics.push({code:'HISTORY_OBSERVATION_UNAVAILABLE',message:error.message})}
+    const observations=mergeObservations(this.traces,history).map(withObservationMode)
     const currentFact=t=>inScope(t)&&(!bound||records.some(r=>r.id===t.id&&r.adapterId===t.adapterId))
-    const facets={turns:[...new Set([...this.traces,...records.flatMap(r=>r.facts??[])].filter(currentFact).filter(t=>t.turn!=null).map(t=>String(t.turn)))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}))}
+    const facets={turns:[...new Set([...sessionTurns,...[...observations,...records.flatMap(r=>r.facts??[])].filter(currentFact).filter(t=>t.turn!=null).map(t=>String(t.turn))])].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}))}
     const filter=t=>inScope(t)&&matches(turns,t.turn)&&matches(kinds,t.turnKind)
     if(!bound)for(const fact of this.traces.filter(filter))if(matches(sources,fact.adapterId)&&!records.some(r=>r.id===fact.id))records.push({id:fact.id,adapterId:fact.adapterId,missing:true,capabilities:{edit:false,copy:false}})
     const rows=records.map(r=>{
-      const policy=this.getConfig(r.id,{adapterId:r.adapterId,scope}),facts=[...this.traces,...(r.facts??[])].filter(t=>t.id===r.id&&t.adapterId===r.adapterId&&filter(t)),activeFacts=[...this.active.values()].filter(t=>t.id===r.id&&t.adapterId===r.adapterId&&filter(t)).map(clone),running=activeFacts.length>0
+      const policy=this.getConfig(r.id,{adapterId:r.adapterId,scope}),facts=[...observations,...(r.facts??[]).map(withObservationMode)].filter(t=>t.id===r.id&&t.adapterId===r.adapterId&&filter(t)),activeFacts=[...this.active.values()].filter(t=>t.id===r.id&&t.adapterId===r.adapterId&&filter(t)).map(clone),running=activeFacts.length>0
       const state=running?'running':facts.some(t=>['triggered','applied','started'].includes(t.phase))?'past':'never'
       return {...r,config:policy.config,origins:policy.origins,configRevision:policy.revision,sourceDefault:policy.sourceDefault,scopePolicy:policy.scopePolicy,configError:this.configuration.error,managed:r.managementMode==='managed',applicable:policyApplies(policy,scopeLease.scope,!!bound),status:state,facts,activeFacts,interrupted:facts.some(t=>t.interrupted),applied:facts.some(t=>t.phase==='applied')}
     })
     facets.fields=Object.fromEntries(configurationFilterFields.map(field=>[field,[...new Set(rows.flatMap(r=>filterValues(r,field)))].sort()]))
     const filteredRows=rows.filter(r=>matches(states,r.status)&&matchesConfigurationFilters(r,filters))
+    if(bound)for(const adapter of queried)if(records.some(record=>record.adapterId===adapter.id))bound(adapter.id)
     if(!scopeLease.checkCurrent())fail('SCOPE_CONTEXT_CHANGED','查询期间真实作用域已变化，请重新读取。')
     return {protocolVersion:1,revision:this.configuration.document.revision,configError:this.configuration.error,rows:filteredRows,diagnostics,catalogs,facets,scope:scope.sessionId?{sessionId:scope.sessionId}:{global:true},adapters:[...this.adapters.values()].map(a=>({id:a.id,name:a.name,authority:a.authority}))}
   }
