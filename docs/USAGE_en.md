@@ -2,36 +2,49 @@
 
 [中文](USAGE.md) · [README](../README_en.md) · [Installation](INSTALLATION_en.md)
 
-## Open and query
+## Browse resources
 
-Settings administers global catalogs/policies; the conversation tab uses actual session visibility. Skills follow Agent preset/cwd; card resources require current source bindings. Old policies, selectors and observations never establish bindings. Global Skills combine Host/loaded sessions without mounting Agents.
+Open Memory Manager in Settings for global catalogs, or select the conversation tab for that session's resources. Skills follow the Agent's preset/workspace; Tavern resources follow the conversation's character, world-book and template bindings.
 
-DSH may hide all tabs before a message; global Settings remains available. Read failure, missing session and empty catalogs are distinct. Query scope shows adapters/counts. GET reads can be retried after 30 seconds; saves do not use that timeout.
+Filter by provider, type, preset and configuration fields. Conversation filters also include turns and storage/retrieval status. Multiple selections within a field match any selection; different fields must all match. Clear filters to restore the full catalog.
 
-## Turns and triggers
-
-Actual durable `turn/start` events establish headings even without activity. Expansion shows an activity-empty notice. Current catalogs/configuration may still appear; this does not imply those resources existed or were used historically. Filtering out all rows preserves headings. Missing turn numbers are never fabricated.
-
-Retrieval requires actual request inclusion; storage requires a source-confirmed committed write in that turn. Each column is independent. Loading, evaluation, permission, starts and previews alone cannot establish retrieval; details keep separate facts. Inclusion does not prove delivery or model use.
-
-Unrecorded is not proof of non-use; unconfirmed means activity without trigger evidence or failure/interruption. Bounded observations and verified historical references provide evidence; current previews never replace missing references. Human, task or system initiators appear only when explicitly recorded; unknown labels are hidden.
+For an empty catalog, check source plugins, Skill availability in the current session and Tavern bindings. Query scope shows sources and counts; retry failed reads through the reload controls. Use global Settings when a blank conversation has no view tabs.
 
 ## Edit policies
 
-Compare current value, follow source and source default. Untouched fields take defaults; field options select following or local values. Missing default contracts report reasons without inventing policies.
+1. Open a resource's management configuration to compare current values and source defaults.
+2. Choose follow source to use a field's default, or open its options to set a local value.
+3. Save-and-return from the field page, then save management configuration on the parent page.
 
-After source default → local → referenced preset composition, explicitly followed fields take live defaults. Selector lists, trees and chains replace whole fields; explicit empty values matter. Restore defaults changes only this resource's draft overrides/preset reference and persists after save. Safe unknown extensions remain; identity fields are read-only.
+Untouched fields use source defaults. Referenced presets override their explicit fields. Fields individually set to follow source take live defaults, while other preset fields remain effective. Selector lists, condition trees and operation chains replace whole values; empty values may disable or deny behavior according to the source.
 
-Options support search, trees, parameters and chains. Save-and-return only updates the parent draft; final save checks source capabilities, revision and disk contents. Conflicts retain drafts. Body edits use independent source permissions/CAS. See [presets](PRESETS_en.md).
+Restore source defaults removes this resource's local overrides and preset reference after save. Unavailable default rules display a reason. Body editing is separate and depends on source write support. Conflicts preserve drafts; reload configuration and merge changes.
+
+Create reusable combinations in the preset page, then reference them in resource configuration. Editing a preset affects all consumers; see [presets](PRESETS_en.md).
+
+## Inspect turn activity
+
+Expand a conversation turn to inspect storage and retrieval separately. Turns remain even without resource activity. The table shows current configuration alongside activity for the selected turn.
+
+| Status | Meaning |
+| --- | --- |
+| Retrieval triggered | Content entered this turn's actual DSH request |
+| Storage triggered | Source confirms a committed write in this turn |
+| Processing | Operation is still running |
+| Skipped | Policy or source explicitly skipped it; details show reasons |
+| Unrecorded | No corresponding record; not proof of non-use |
+| Unconfirmed | Activity without trigger evidence, or failure/interruption |
+
+Details show successful body reads, rule matches and previews separately. Loaded content may not enter the request; inclusion does not prove model use. Missing historical source references can leave status unrecorded.
 
 ## Skill type and source
 
-DSH's Skill registry identifies resources, without name/body heuristics. `skill` is the type; providers such as `filesystem` describe loading channels. Workspace `.dsh/skills`, `.agents/skills`, user, custom and bundled roots describe actual origin without requiring plugin ownership. Current metadata retains provider, without complete directory provenance.
+`skill` is the resource type; providers such as `filesystem` describe loading channels. Skills may come from workspace, user, custom or bundled directories without belonging to a plugin. The current adapter exposes provider information without complete directory provenance.
 
-File identity uses provider/path/name. Virtual providers can declare stable identity; otherwise resources are view-only and cannot persistently bind policies. Bodies are read-only. Catalog visibility does not prove invocation, and reads do not prove inclusion. Native tools and explicit invocations distinguish these facts.
+Skill bodies are read-only. Virtual Skills without stable identity can be viewed but cannot persistently bind policies. Providers can declare identity as described in the [developer guide](DEVELOPER_GUIDE_en.md).
 
-## Source execution and removal
+## Source persistence and assembly
 
-Fixed-resource persistence is source-maintained storage without requiring a Manager write. Native MVU card operations use Tavern bindings, switches, grants, schema and CAS; Manager observes without granting permissions.
+Fixed-resource content changes with its source, which maintains persistence. Native Tavern MVU card operations follow Tavern execution switches and write grants; this plugin manages model reads and post-reply update policies.
 
-Preview emits no inclusion receipt. Generic assembler contributions require explicit source selection and Host capability. Removal preserves policies, source data and DSH history. Compatible sources restore defaults for future operations; reinstall reapplies retained policies.
+To add generic resources to requests through management policies, select `memory-manager.resources` in Prompt Assembler. Saving policies does not automatically select a request source; see [integration](ASSEMBLER_en.md).

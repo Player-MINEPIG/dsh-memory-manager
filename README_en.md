@@ -1,64 +1,64 @@
-# DSH Memory Manager v1.0.0
+# DSH Memory Manager
 
-[中文](README.md) · [Installation](docs/INSTALLATION_en.md) · [Usage](docs/USAGE_en.md) · [API](docs/API_en.md) · [Changelog](CHANGELOG.md)
+[中文](README.md)
 
-Discover resources, edit policies and inspect storage/retrieval triggers by session turn. Sources retain bodies, identities, revisions, permissions and writes; durable DSH history stays authoritative. Manager stores policies and bounded observations, without a second content database or task ledger.
+A DSH plugin for managing Skills, world-books, MVU state and prompt templates. Browse resources, configure when they are stored or retrieved, reuse presets and inspect which operations occurred in each conversation turn.
 
-## Installation
+## Quick Start
 
-The target is DSH `0.2.0-rc.2` with Node.js `^22.19.0 || >=24`. Install from GitHub; restricted repositories require access.
+Requires DSH `0.2.0-rc.2` and Node.js `^22.19.0 || >=24`.
+
+### 1. Install
 
 ```sh
 dsh plugin --profile web add github:Player-MINEPIG/dsh-memory-manager#codex/assembler-integration
 ```
 
-Restart the selected Host. Use Settings → Memory Manager for global administration, or the conversation tab for the current session. The package includes its DSH bundle and prebuilt client. Configuration defaults to `$DSH_HOME/dsh-memory-manager/config.json`; bodies remain at their sources. See [installation](docs/INSTALLATION_en.md) for upgrades and removal.
+Replace `web` if you use another profile. Restricted repositories require GitHub access.
 
-## Configuration and presets
+### 2. Open the resource catalog
 
-Three columns show current value, follow source and source default, with spaced dividers. Untouched fields use source values directly; fields can explicitly follow their source. Source-maintained persistence changing with a fixed resource is described as storage.
+Restart DSH with that profile and open Memory Manager in Settings. Browse resources from connected sources, their current configuration and storage/retrieval presets.
 
-Composition applies source default → local fields → referenced preset, then substitutes live defaults for explicitly followed fields. Other preset fields remain effective. Empty values differ from omitted fields. Policy saves are separate from content edits and use source validation, revision and disk CAS; conflicts preserve drafts.
+DSH Skills are supported directly. World-books, MVU and templates require [DSH Tavern](https://github.com/Player-MINEPIG/dsh-tavern). Catalog contents depend on sources available to the Host and loaded sessions.
 
-Presets support create, edit, import, export and local overrides of adapter defaults. JSON rules/strategies select trusted Host capabilities without executing JavaScript. See [options](docs/OPTIONS_en.md), [presets](docs/PRESETS_en.md) and the [configuration example](examples/config.json).
+### 3. Inspect and configure session resources
 
-## Per-turn activity
+Open an existing conversation, select the Memory Manager tab and expand a turn to inspect storage/retrieval status. Open a resource's management configuration, choose source defaults or local rules/presets, then save the configuration.
 
-Actual DSH `turn/start` events establish headings. Turns remain with no activity, no resources or no rows after filtering; missing turns are never fabricated. Storage/retrieval are independent per turn, without an aggregate past-trigger state. Unknown turn initiators are hidden.
+Turns remain visible even without resource activity. See the [usage guide](docs/USAGE_en.md) for more operations.
 
-| Status | Evidence |
+## Features
+
+- **Browse resources**: global Settings administers catalogs; the conversation tab shows resources available to that session.
+- **Configure operations**: choose timing, conditions and steps supported by each source, with field-level following of source defaults.
+- **Reuse presets**: create, edit, import and export storage/retrieval combinations for multiple resources.
+- **Inspect turn activity**: separate retrieval/storage triggers and details for skips, failures and body reads.
+
+The editor compares current values with source defaults. Untouched fields inherit defaults; explicitly followed fields update when their source changes. Other preset fields remain effective. See [configuration](docs/USAGE_en.md#edit-policies).
+
+## Resources
+
+| Resource | Integration |
 | --- | --- |
-| Retrieval triggered | Content verified in this turn's actual DSH request |
-| Storage triggered | Source confirms a committed write in this turn |
-| Processing / skipped | Active execution or explicit skip receipt |
-| Unrecorded | No matching operation record; not proof of non-use |
-| Unconfirmed | Activity without sufficient evidence, or failure/interruption |
+| Skill | Native DSH Skill registry; catalog and body reads |
+| World-book, MVU state, prompt template | Tavern source services; operations follow source capabilities |
+| Third-party resources | Public adapter interface; see the [developer guide](docs/DEVELOPER_GUIDE_en.md) |
 
-Body-read success, rule matches and previews alone do not establish retrieval. Details keep these separate facts. Request inclusion does not prove delivery or model use. Standard/native observes Skill tools and explicit invocations. World-books, MVU and templates use public source receipts and verified historical request references; absent references are never replaced with current previews.
+The plugin uses existing source resources. Sources manage bodies, access and writes. Removal preserves management configuration, resource data and DSH session history.
 
-## Optional sources
+## What triggered means
 
-| Source | Capabilities and boundaries |
-| --- | --- |
-| DSH Skills | Host/loaded-Agent catalogs, actual session preset/cwd and preset-registry precedence. Read-only catalog/body access; unavailable Agents never fall back globally |
-| Tavern world-books / Prompt Template | Optional `tavernMemorySources` v1 defaults, catalogs, bindings and fixed source chains; body access follows source capabilities |
-| Tavern MVU | Optional `tavernMvu` v1 reads, CAS edits, decisions and observations; native card writes remain independently authorized by Tavern |
-| Prompt Assembler | Independent repository owns optional `memory-manager.resources`; users explicitly select strategies, never automatically changed by Manager |
-| Third-party resources | Public adapters, conditions, operations and source decision contracts; no TaskSystem adapter in this version |
+**Retrieval triggered** means resource content entered this turn's DSH request. **Storage triggered** means its source confirms a committed write in this turn. Successful body reads are recorded separately. Unrecorded means evidence is absent, not proof of non-use.
 
-Skill is the resource type; source describes loading channel/directory without requiring plugin ownership. The adapter identifies Skills through DSH's registry and retains `provider`; complete directory provenance is not yet exposed. File identity uses provider/path/name. Virtual Skills may declare `metadata.dshResourceIdentity`; unstable identities are view-only and cannot bind persistent policies.
+To provide generic resources to the model through management policies, select `memory-manager.resources` in [Prompt Assembler](https://github.com/Player-MINEPIG/dsh-prompt-assembler) and use a Host supporting request-assembly protocol 1. Native DSH Skill invocation does not require this step. See [assembler integration](docs/ASSEMBLER_en.md).
 
-Manager has no Tavern/assembler production dependency and runs with native DSH independently. Standard/native observation differs from optional request-assembly protocol 1: generic assembly requires explicitly prepared core support, while Manager installation never patches core. The legacy world-book HTTP bridge is disabled by default, explicitly loopback-only and read-only. Source failures expose diagnostics.
+## Documentation
 
-Removal preserves policies, source bodies and DSH history. Compatible sources revoke delegation and restore defaults for future operations; reinstall reapplies retained policies. No vector engine, summarizer or autonomous scheduler is included.
+- [Install, upgrade and remove](docs/INSTALLATION_en.md)
+- [Usage](docs/USAGE_en.md) and [presets](docs/PRESETS_en.md)
+- [API](docs/API_en.md), [options](docs/OPTIONS_en.md) and [developer guide](docs/DEVELOPER_GUIDE_en.md)
+- [Architecture](docs/ARCHITECTURE_en.md) and [compatibility validation](docs/VALIDATION.md)
+- [Changelog](CHANGELOG.md)
 
-## Development and documentation
-
-Place this repository and `dsh-prompt-assembler` in sibling directories, then run `npm ci`, `npm run check` and `npm run pack:check`. Assembler is a development dependency only. Real Host checks use synthetic providers; see [validation](docs/VALIDATION.md) for environment variables and browser checks.
-
-- [Usage and status meanings](docs/USAGE_en.md)
-- [Developer guide](docs/DEVELOPER_GUIDE_en.md) and [API](docs/API_en.md)
-- [Architecture and interactive diagram](docs/ARCHITECTURE_en.md)
-- [Assembler integration](docs/ASSEMBLER_en.md) and [sessionless previews](docs/SOURCE_PREVIEW_en.md)
-
-MIT license.
+[MIT License](LICENSE)

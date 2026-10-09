@@ -6,7 +6,7 @@ Target DSH 0.2.0-rc.2. Use temporary profiles, synthetic resources and fake mode
 
 ## Tests, build and package
 
-Clone manager and assembler into sibling directories, then run:
+Follow [development setup](DEVELOPER_GUIDE_en.md#development-setup) to clone and install dependencies for both repositories, then run in Manager:
 
 ```sh
 npm ci
@@ -51,9 +51,9 @@ This covers native Skill catalogs, source defaults/bindings, template CAS, prepa
 
 Use an authorized isolated profile for Settings/conversation views, details, options, presets, retry and navigation cancellation on desktop/narrow layouts. Distinguish loading, missing sessions, failed sources and empty catalogs.
 
-- Current/follow/default columns with spaced dividers, immediate draft composition, source changes, retained preset fields, restore defaults and CAS conflicts.
+- Current/follow/default value consistency, immediate draft composition, source changes, retained preset fields, restore defaults and CAS conflicts.
 - Fixed-resource persistence, preset-only Skills, per-turn trigger columns, policy skips, failures/interruption and independent concurrent storage/retrieval.
-- Empty first turns, no resources and all rows filtered out still preserve headings; unknown initiators stay hidden and missing numbers are never fabricated.
+- Empty first turns, no resources and all rows filtered out still preserve headings; missing numbers are never fabricated.
 - Preset create/edit, adapter-default overrides, export/reimport and atomic rejection of malformed/unsupported imports, preserving file, revision and drafts.
 
 Lifecycle writes use separate synthetic fixtures. Compare source data, DSH history, assembler strategies and Manager policies across removal/reinstall. Removal revokes compatible delegation/generic contributions; reinstall reapplies retained rules. Never write user policies for acceptance tests. Record browser acceptance separately from synthetic Host passes. Do not send online requests without authorization; local tests do not establish external provider delivery, arbitrary third-party compatibility or unavailable desktop acceptance.

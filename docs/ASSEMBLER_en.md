@@ -2,14 +2,26 @@
 
 [中文](ASSEMBLER.md) · [Manager API](API_en.md)
 
-The Manager production package does not depend on assembler or Tavern. The optional request adapter lives in the independent assembler repository, `adapters/memory-manager.js`; third parties fork or submit PRs there. Configuration, resource authority and retrieval policies remain with Manager and the source.
+To add Skills or third-party generic resources to requests through management policies, enable assembler's `memory-manager.resources` source. Native DSH Skill calls and Tavern's source-owned world-book, MVU and template contributions use their own paths.
 
-`manager.requestAssemblyResources()` synchronously returns `{available,entries}`. Configuration errors return `available:false,entries:[]`, without falling back to stale configuration. Each entry contains `id,adapterId,configurationSnapshot`; the effective configuration and revision are detached from Manager state. Source-owned adapters, including MVU, are excluded from generic request assembly to prevent duplicate insertion.
+## Configure integration
 
-The adapter calls public `manager.trigger()` in read-only preview mode with the actual session, cancellation signal and configuration snapshot. `connectMemoryManager(ctx,registry)` follows the Host `dshMemoryManager` lifecycle. Its assembler source ID is `memory-manager.resources`. Registration makes it selectable; users still add it to an assembly strategy.
+1. Configure retrieval rules and applicable scope for a generic resource in Manager, then save.
+2. Select `memory-manager.resources` in the Prompt Assembler strategy.
+3. Execute with a Host supporting request-assembly protocol 1. See the [assembler documentation](https://github.com/Player-MINEPIG/dsh-prompt-assembler) for Host preparation.
 
-Preview never records applied. The observer records applied only when durable request/assembly evidence, actual message hashes and matching source nodes agree with llm/stream. This proves inclusion in the DSH request, not network delivery. Adapter removal preserves durable evidence and native DSH execution.
+The Manager source appears when valid generic retrieval configuration exists. Source-owned resources are excluded from this path to avoid duplicate contributions.
 
-The module picker exposes Manager only when valid generic retrieval configuration exists. Dispersed-content parsers do not require empty modules. Session queries may borrow cold persisted sessions through the source’s public `withSessionRead({sessionId,signal},callback)` read lease. The panel shows loading during the read, without activating an Agent or appending history. `SESSION_READER_NOT_READY` is initialization (503); `SESSION_NOT_FOUND` is persisted-session absence (404); other read errors remain failures.
+## Adapter interface
 
-Actual read-only preparation passes observeRead:true and emits content-read independently from the request-included receipt verified at llm/stream. Only the latter establishes this turn’s retrieval trigger.
+The request adapter lives in assembler's `adapters/memory-manager.js`. `connectMemoryManager(ctx,registry)` registers or withdraws it with the Host `dshMemoryManager` service lifecycle.
+
+`manager.requestAssemblyResources()` synchronously returns `{available,entries}` with `id,adapterId,configurationSnapshot` per entry. Snapshots contain detached effective configuration/revision; configuration errors return `available:false,entries:[]`. Source-owned adapters, including MVU, are excluded.
+
+The adapter calls `manager.trigger()` in read-only preview mode with session, cancellation and configuration snapshot. Actual request preparation additionally passes `observeRead:true`, recording `content-read`. Matching `request/assembly`, message hashes and source nodes verified at `llm/stream` establish `request-included` for per-turn retrieval status. Preview never produces inclusion receipts.
+
+## Session reads and removal
+
+`withSessionRead({sessionId,signal},callback)` provides a read-only lease for cold persisted sessions. `SESSION_READER_NOT_READY` means initialization (503); `SESSION_NOT_FOUND` means absence (404). The lease neither creates Agents nor appends history.
+
+Removing Manager withdraws its generic request source while preserving source resources and DSH history.

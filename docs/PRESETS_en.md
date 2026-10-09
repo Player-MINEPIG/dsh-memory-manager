@@ -2,12 +2,17 @@
 
 [中文](PRESETS.md)
 
-The resource table's preset page supports creation, editing, JSON import and export of one or all presets. A preset contains reusable `type / store / retrieve` combinations. It contains no content, resource identity, scope lists or nested preset reference. Select and save a preset in resource configuration. Its explicit fields continuously override local values; omitted fields still use source defaults or local values.
+The resource table's preset page supports creation, editing, JSON import and export of one or all presets. A preset contains reusable `type / store / retrieve` combinations. It contains no content, resource identity, scope lists or nested preset reference. Select and save a preset in resource configuration. Its explicit fields override local values; omitted fields still use source defaults or local values. A resource field explicitly set to follow source takes its live default instead of the preset value.
 
 An adapter can declare several defaults in `optionCatalog.presets`. Custom default IDs become `adapter:<adapterId>:<presetId>`; supported built-in IDs retain their names. Reading defaults does not write files. Explicitly saving a resource reference persists only the selected new default definition. Editing a default saves a local override under the same ID. Editing a referenced preset affects its consumers and requires validation by all affected resources' sources before saving. Sources retain content, bindings, permissions and native execution.
 
+## Use a preset
 
-Current Tavern native card writes do not use Manager policies. The legacy `builtin:mvu-card-interaction` is no longer offered as a new default; persisted definitions remain readable, while unsupported events, conditions and write strategies are rejected on import or save. Tavern source execution switches and write grants control native operations.
+1. Open the preset page from the resource catalog. Create a combination or choose a source default, and save it.
+2. Open resource configuration, select the preset and set the resource's applicable scope, then save management configuration.
+3. Export a single preset or the whole library to reuse it elsewhere. The target environment must provide the referenced adapters and operations.
+
+For generic resource provision, including configured Skill retrieval, also select the assembler request source as described in [integration](ASSEMBLER_en.md).
 
 ## Portable files
 
@@ -34,7 +39,11 @@ Current Tavern native card writes do not use Manager policies. The legacy `built
 
 Files are limited to 2 MB and 1–200 items. Each item needs a unique nonempty ID, label and one or more target adapters; description is optional. Configuration must contain store or retrieve, whose only fields are `on / rule / strategy`. Unknown file/configuration fields, malformed rules or steps, unknown conditions/operations, undeclared parameters, unsupported types/modes/events, incompatible fixed order and missing/disabled adapters reject the entire batch. Fields are never silently stripped; partial imports never occur. Every target adapter must accept the combination. Parameters must match registered descriptors; source-owned strategies use only steps and parameters actually declared by the source.
 
-Import never overwrites an existing ID, including defaults; use a new ID. Editing explicitly replaces a definition. Export includes only portable fields, without runtime origin/available/revision. Another environment validates the file against its current capabilities. Legacy local presets without adapter metadata remain readable, but editing requires explicit target adapters.
+Import never overwrites an existing ID, including defaults; use a new ID. Editing explicitly replaces a definition. Export includes only portable fields, without runtime origin/available/revision. Another environment validates the file against its current capabilities.
+
+## Older configurations
+
+The earlier `builtin:mvu-card-interaction` does not control native Tavern card writes. Configure execution switches and write grants in Tavern. Older presets remain readable; imports/saves require replacing operations unsupported by the current source. Presets without adapter metadata need explicit target adapters before saving edits.
 
 ## Adapter and API integration
 
@@ -46,7 +55,3 @@ Add `presets: [{id, label, description?, configuration}]` to an existing option 
 - HTTP: `GET /api/dsh-memory-manager/presets`, `POST .../validate-presets` with `{bundle}`, and `POST .../save-presets` with save arguments. Existing Host authentication applies; POST requires same-origin JSON and `X-DSH-Memory-Manager: 1`.
 
 Saves use the existing serialized configuration queue and compare revision, complete disk content and capability registrations throughout validation. Success updates only preset definitions and `presetMetadata`, increments revision once, syncs a temporary file and atomically replaces the original. Failure/conflict preserves the file and UI draft. Editing a referenced preset also validates every affected resource; an unavailable source rejects the save instead of bypassing its contract.
-
-## Read states
-
-Configuration and option catalog reads finish independently. A stalled catalog does not conceal loaded configuration. Browser GET reads exceeding 30 seconds display a read timeout with retry and cancel their request. Timeout does not mean resource absence or source removal. Session-reader initialization, confirmed absence and read failure remain distinct. Mutations do not use the GET timeout because cancelling transport cannot establish that the server did not write.

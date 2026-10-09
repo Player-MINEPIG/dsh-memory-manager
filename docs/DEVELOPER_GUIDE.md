@@ -46,9 +46,25 @@ registerCondition({id,test,label?,description?,adapterIds?,types?,modes?,paramet
 
 可选 update 需要 expectedRevision/operationId，事务提交与回执由来源拥有；copy 需要不同 newId。Manager 预留身份但不替代权威账本。适用的提交前拒绝须报告 committed:false；模糊结果保持 MUTATION_OUTCOME_UNKNOWN，直到权威回读核实。提交后错误不能冒充可安全重试的拒绝。
 
-observe(listener) 发送 started/triggered/applied/skipped/failed/completed，含稳定 eventId 与真实 session/turn/request。报告来源事实，不从 UI 推断。支持时提供 mode:store|retrieve 及 evidence:content-read|request-included|write-committed|source-evaluated；读取触发需 request-included，存储触发需 write-committed，applied 等 phase 本身不足以确认。标题隐藏未知 turnKind，不改写回执。有界 journal 最多 2000 条，不是持久幂等库或历史替代。装配 applied 必须以 durable request、messages、来源节点匹配 llm/stream，不证明网络送达。preview 不发 applied。
+observe(listener) 发送 started/triggered/applied/skipped/failed/completed，含稳定 eventId 与真实 session/turn/request。报告来源事实，不从 UI 推断。支持时提供 mode:store|retrieve 及 evidence:content-read|request-included|write-committed|source-evaluated；读取触发需 request-included，存储触发需 write-committed，applied 等 phase 本身不足以确认。有界 journal 最多 2000 条，不是持久幂等库或历史替代。装配 applied 必须以 durable request、messages、来源节点匹配 llm/stream，不证明网络送达。preview 不发 applied。
 
 虚拟 Skill 可声明 metadata.dshResourceIdentity:{version:1,namespace,id}，重启/正文变化仍保持身份；namespace 与复制新身份由提供方负责。未声明者为临时 skill-view handle、bind:false，配置不能把它变为持久资源。
+
+## 开发环境
+
+将 Manager 与 assembler 放在同一父目录，并分别安装开发依赖：
+
+```sh
+git clone https://github.com/Player-MINEPIG/dsh-prompt-assembler.git
+git clone --branch codex/assembler-integration https://github.com/Player-MINEPIG/dsh-memory-manager.git
+cd dsh-prompt-assembler
+npm ci
+cd ../dsh-memory-manager
+npm ci
+npm run check
+```
+
+assembler 是 Manager 的开发依赖，生产安装使用插件自带客户端。Host 接入检查见[验证文档](VALIDATION_zh-CN.md)。
 
 ## 校验与打包
 

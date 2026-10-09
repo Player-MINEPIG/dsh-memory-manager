@@ -1,6 +1,6 @@
 # Memory Manager adapter protocol 1
 
-Package v1.0.0 retains service protocol, configuration schema and preset format 1. Headings hide unknown turnKind without altering receipts. Skill is a registry-declared type, provider is its loading channel, and the current adapter does not fully expose directory provenance.
+Package v1.0.0 retains service protocol, configuration schema and preset format 1.
 
 [中文](API.md) · [Developer guide](DEVELOPER_GUIDE_en.md)
 
@@ -120,5 +120,7 @@ Core MVU historical retrieval requires `MVU_RESOURCE_VERSION` or `WORLD_BOOK_MVU
 
 
 Evidence is independent of execution phase: content-read confirms a successful body read; request-included confirms verified inclusion in this turn's actual request; write-committed confirms a source write; source-evaluated describes a rule match or evaluation. Catalog lookup, preview, policy permission and successful reads alone never confirm retrieval. Rejected or uncertain writes and empty successful operation chains never confirm storage.
+
+Skill is a registry-declared type, provider is its loading channel, and the current adapter does not fully expose directory provenance.
 
 Native Skills use public tools/pre-execute, tools/result, agent/pre-step and llm/stream hooks. A successful scoped body load first records content-read. Tool-call or explicit Skill message identity, content hashes and the frozen actual request then establish request-included. Directory descriptions are insufficient; transformed output that removes the rendered body cannot establish inclusion. A retained body counts as inclusion in each later request containing it without claiming another load. Receipts store identity, revision, message references and hashes, not bodies. Unload stops observation without changing native Skill execution.

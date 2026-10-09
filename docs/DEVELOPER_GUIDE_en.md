@@ -46,9 +46,25 @@ Optional getManagementDefaults returns protocolVersion:1, revision, a body-free 
 
 Optional update requires expectedRevision and operationId; source owns transactional commit/receipt. Optional copy requires a different newId; Manager reserves identities but is not the authority ledger. Precommit rejection must report committed:false where applicable; ambiguous failure remains MUTATION_OUTCOME_UNKNOWN until authoritative reconciliation. Do not relabel a postcommit error as a safe rejection.
 
-observe(listener) emits started/triggered/applied/skipped/failed/completed with stable eventId and actual session/turn/request identity. Report source facts rather than UI assumptions. Include mode:store|retrieve and explicit evidence:content-read|request-included|write-committed|source-evaluated where supported. Retrieval triggers require request-included; storage triggers require write-committed. A phase such as applied is insufficient on its own. Unknown turnKind labels are hidden in headings without rewriting receipts. The bounded journal stores at most 2,000 observations; it is not durable idempotency or a replacement history. Applied from assembly requires exact durable request, messages and source nodes matching llm/stream; it does not prove network delivery. Preview produces no applied receipt.
+observe(listener) emits started/triggered/applied/skipped/failed/completed with stable eventId and actual session/turn/request identity. Report source facts rather than UI assumptions. Include mode:store|retrieve and explicit evidence:content-read|request-included|write-committed|source-evaluated where supported. Retrieval triggers require request-included; storage triggers require write-committed. A phase such as applied is insufficient on its own. The bounded journal stores at most 2,000 observations; it is not durable idempotency or a replacement history. Applied from assembly requires exact durable request, messages and source nodes matching llm/stream; it does not prove network delivery. Preview produces no applied receipt.
 
 For virtual Skills, metadata.dshResourceIdentity:{version:1,namespace,id} preserves identity through restarts/body changes; provider owns namespace and copy identity. Undeclared virtual Skills remain ephemeral skill-view handles with bind:false. Configuration cannot turn them into durable resources.
+
+## Development setup
+
+Keep Manager and assembler in sibling directories and install each checkout's development dependencies:
+
+```sh
+git clone https://github.com/Player-MINEPIG/dsh-prompt-assembler.git
+git clone --branch codex/assembler-integration https://github.com/Player-MINEPIG/dsh-memory-manager.git
+cd dsh-prompt-assembler
+npm ci
+cd ../dsh-memory-manager
+npm ci
+npm run check
+```
+
+Assembler is a Manager development dependency; plugin users receive the prebuilt client. See [validation](VALIDATION.md) for Host integration checks.
 
 ## Validation and packaging
 

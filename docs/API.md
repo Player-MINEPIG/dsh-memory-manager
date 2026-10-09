@@ -1,6 +1,6 @@
 # Manager 合同（协议 1）
 
-v1.0.0 包版本保持服务协议、配置 schema 和预设格式为 1。轮次标题隐藏未知 turnKind，不修改原始回执。Skill 是注册表声明的资源类型，provider 是加载渠道；当前 adapter 不完整暴露目录来源。
+v1.0.0 包版本保持服务协议、配置 schema 和预设格式为 1。
 
 [English](API_en.md) · [第三方开发者指南](DEVELOPER_GUIDE.md) · [选项目录](OPTIONS.md) · [存取预设](PRESETS.md)
 
@@ -86,5 +86,7 @@ MVU 的 core 历史读取须有 `MVU_RESOURCE_VERSION` 或 `WORLD_BOOK_MVU_VARIA
 
 
 读取证据分为 `content-read`（正文读取成功）与 `request-included`（经核验进入本轮实际请求）；存储用 `write-committed`（来源确认写入），规则命中或求值用 `source-evaluated`。证据与执行 phase 独立。正文读取、来源目录查询、预览和策略许可不会单独点亮读取触发。来源拒绝或未知提交不会点亮存储触发，成功执行空链也不算写入。
+
+Skill 是注册表声明的资源类型，provider 是加载渠道；当前 adapter 不完整暴露目录来源。
 
 原生 Skill 通过公开 `tools/pre-execute`、`tools/result`、`agent/pre-step` 与 `llm/stream` 接线：实际作用域中成功加载正文先记录 content-read，再用工具调用或显式 Skill 消息身份、内容哈希和冻结实际请求核验 request-included。仅目录描述不能证明读取；正文被输出变换移除时不会记录请求进入证据。正文保留在后续轮次请求时按该轮记录进入请求，不重复声称加载。journal 只保留资源身份、版本、消息引用及哈希，不复制正文。卸载撤销观察，不改原生 Skill 行为。

@@ -2,14 +2,26 @@
 
 [English](ASSEMBLER_en.md) · [Manager API](API.md)
 
-Manager 的生产包不依赖 assembler 或 Tavern。请求 adapter 位于独立 assembler 仓库 `adapters/memory-manager.js`，第三方在那里 fork 或提 PR；管理配置、资源权限与检索策略仍由 Manager 和来源维护。
+通过管理规则将 Skill 或第三方通用资源加入模型请求，需要启用 assembler 的 `memory-manager.resources` 来源。DSH 原生 Skill 调用，以及 Tavern 自行执行的世界书、MVU 和模板贡献，使用各自的来源路径。
 
-`manager.requestAssemblyResources()` 同步返回 `{available,entries}`。配置错误时返回 `available:false,entries:[]`，不回退到失效配置。每条 entry 包含 `id,adapterId,configurationSnapshot`；snapshot 是与内部配置分离的有效配置与 revision，不能改变 Manager 状态。source-owned adapter（包括 MVU）不进入通用装配路径，避免重复插入。
+## 配置接入
 
-adapter 以只读 preview 模式调用公开 `manager.trigger()`，传递真实会话、取消信号及配置快照。实际请求准备额外传 observeRead:true；仅记录正文读取成功，不提升为请求进入证据。注册/卸载由 `connectMemoryManager(ctx,registry)` 跟随 Host 服务 `dshMemoryManager` 生命周期，assembler 来源 ID 为 `memory-manager.resources`。来源注册仅使其可选；用户仍须将其加入装配策略。
+1. 在 Manager 中为通用资源配置读取规则和适用范围，保存管理配置。
+2. 在 Prompt Assembler 的装配策略中选择 `memory-manager.resources`。
+3. 使用支持 request-assembly 协议 1 的宿主执行请求。宿主准备方式见 [assembler 文档](https://github.com/Player-MINEPIG/dsh-prompt-assembler)。
 
-预览不记录 applied。只有持久 `request/assembly` 事件、最终消息哈希和对应来源节点同时匹配 `llm/stream` 观察时才记录 applied；该事实说明进入 DSH 请求，不证明网络送达。卸载 adapter 不删除持久记录、不改变原生 DSH 执行。
+有效通用读取配置存在时，Manager 来源才出现在装配选项中。可自行执行的来源不进入这条路径，避免重复提供内容。
 
-模块菜单只在有效通用检索配置存在时显示 Manager；不通过空模块接入分散内容的解析器。会话查询可通过来源公开的 `withSessionRead({sessionId,signal},callback)` 只读租约借用持久化冷会话，读取期间显示加载中，不创建 Agent 或追加历史。`SESSION_READER_NOT_READY` 表示服务初始化（503），`SESSION_NOT_FOUND` 表示持久会话不存在（404），其他读取错误仍显示失败。
+## adapter 接口
 
-实际请求准备的 content-read 与 llm/stream 核验后的 request-included 独立；只有后者点亮本轮读取列。
+请求 adapter 位于 assembler 仓库的 `adapters/memory-manager.js`。`connectMemoryManager(ctx,registry)` 跟随 Host 服务 `dshMemoryManager` 的生命周期注册或撤销来源。
+
+`manager.requestAssemblyResources()` 同步返回 `{available,entries}`，每项含 `id,adapterId,configurationSnapshot`。snapshot 是分离的有效配置与 revision；配置错误返回 `available:false,entries:[]`。source-owned adapter（包括 MVU）不进入通用快照。
+
+adapter 以只读 preview 模式调用 `manager.trigger()`，传递会话、取消信号和配置快照。实际请求准备另传 `observeRead:true`，记录 `content-read`。`request/assembly`、消息哈希和来源节点经 `llm/stream` 核验后才记录 `request-included`，用于判断本轮读取触发。预览不生成请求进入回执。
+
+## 会话读取与撤销
+
+会话查询可通过 `withSessionRead({sessionId,signal},callback)` 只读租约读取持久化冷会话。`SESSION_READER_NOT_READY` 为初始化状态（503），`SESSION_NOT_FOUND` 为会话不存在（404）。租约不创建 Agent 或追加历史。
+
+卸载 Manager 撤销其通用请求来源，保留来源资源和 DSH 历史。

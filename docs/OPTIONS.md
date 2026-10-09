@@ -2,7 +2,7 @@
 
 [English](OPTIONS_en.md) · [API](API.md) · [预设](PRESETS.md)
 
-GET /options 用 JSON 描述注册能力，返回 version:1 与 catalogRevision，不注册代码、不授权访问、不选择装配来源、不转移 ownership 或运行策略。资源 ID 与装配来源 ID 独立。注册/卸载/同函数 ABA 重注册/descriptor/enable 变化使旧目录失效；expectedCatalogRevision 与 expectedRevision 分开。
+GET /options 返回注册能力的 JSON 描述、version:1 与 catalogRevision。可执行实现由 Host 的 condition/operation 注册提供。资源 ID 与装配来源 ID 独立。注册/卸载/同函数 ABA 重注册/descriptor/enable 变化使旧目录失效；expectedCatalogRevision 与 expectedRevision 分开。
 
 ## 来源声明
 
@@ -22,7 +22,7 @@ UI 可选择注册选项，适用性仅为提示，最终校验/保存决定兼�
 
 ## 预设与路由
 
-内置 builtin:skill-retrieve、builtin:mvu-managed、builtin:worldbook-retrieve、builtin:prompt-template-retrieve。不再提供原生卡片交互默认预设；旧不支持定义可查看但拒绝导入/保存。用户同 ID 定义覆盖内置；adapter 默认为 adapter:<adapterId>:<presetId>，显式保存才物化选择的定义。复用预设不含白/黑名单，scope 为资源本地字段。可移植格式见 [PRESETS](PRESETS.md)。
+内置 builtin:skill-retrieve、builtin:mvu-managed、builtin:worldbook-retrieve、builtin:prompt-template-retrieve。用户同 ID 定义覆盖内置；adapter 默认为 adapter:<adapterId>:<presetId>，显式保存才物化选择的定义。复用预设不含白/黑名单，scope 为资源本地字段。可移植格式见 [PRESETS](PRESETS.md)。
 
 adapterId 为规则路由，sourceAdapterId 保留正文权威来源。跨路由需只读 validateResourceRoute 确认 supported:true 与精确 id/sourceAdapterId，来源固定链不得跨路由。不迁移正文/权限/复制身份。正文编辑能力独立；当前 runtime 资源/目录开关撤销 lease，不删数据，重启恢复默认。
 

@@ -1,31 +1,37 @@
-# Install and remove
+# Install, upgrade and remove
 
-[中文](INSTALLATION.md) · [README](../README_en.md)
+[中文](INSTALLATION.md) · [README](../README_en.md) · [Usage](USAGE_en.md)
 
-Use DSH 0.2.0-rc.2 with Node ^22.19.0 or >=24, stop the selected Host and preserve data before installation. Install from the current branch; restricted repositories require access:
+## Install
+
+Requires DSH `0.2.0-rc.2`, Node.js `^22.19.0 || >=24` and repository access. Stop the Host using the target profile, then run:
 
 ```sh
 dsh plugin --profile web add github:Player-MINEPIG/dsh-memory-manager#codex/assembler-integration
 ```
 
-Restart the same profile. cordis.patch.yml sets storageDir through dshHomePath('dsh-memory-manager'); absent config.json is exclusively created, an existing malformed/unreadable file is preserved and reported. Manager can run without Tavern or assembler. Their source services and the assembler request adapter are optional. No installation patches DSH core or activates a model request.
+Replace `web` with your profile name and restart DSH. Open Memory Manager in Settings to browse resources, or use the conversation tab to inspect turn activity.
 
-Settings provide global administration; a separate public conversation.view provides current-session resources and actual DSH turn headings and per-turn source observations. DSH may hide view tabs in blank sessions; Manager does not inject an alternate shell.
+The plugin includes a prebuilt client. Configuration defaults to `$DSH_HOME/dsh-memory-manager`. First startup creates empty configuration and uses source defaults. Errors reading existing configuration preserve the file and display a diagnostic.
 
-Stop Host and remove only the Manager bundle using the public DSH plugin manager. Plugin removal preserves config.json, observations.json, source bodies and native DSH history. Compatible lifecycle sources revoke delegation and recover source defaults; generic Manager assembly contributions disappear. Reinstallation reads saved policies and may deny previously permitted source use again. Do not delete/restore configuration or overwrite sessions as part of reinstall. Legacy source ownership follows its declared contract.
+## Optional integrations
 
-Development expects sibling dsh-memory-manager and dsh-prompt-assembler directories because the latter is a file development dependency. Run npm ci, npm run check and npm run pack:check. Host/browser verification is in [validation](VALIDATION.md); skipped fixture tests do not establish UI acceptance.
+DSH Skills use the Host/session Skill registry directly. Install Tavern to connect its world-book, MVU and template services. Supported operations appear in resource configuration.
+
+To add generic resources to model requests through Manager policies, select `memory-manager.resources` in Prompt Assembler and provide request-assembly protocol 1. See [assembler integration](ASSEMBLER_en.md) for setup and interfaces.
 
 ## Upgrade
 
-Stop the selected Host, retain `$DSH_HOME/dsh-memory-manager` and update the plugin in the same profile using the command above. No schema migration is needed: configuration schema, service protocol and preset format remain version 1. Do not delete settings or session history to upgrade. Rebuild/restart the Host client as required by the DSH plugin manager.
+Stop the Host, update with the installation command in the same profile and restart. Retain `$DSH_HOME/dsh-memory-manager` to keep configuration. Version 1.0.0 uses configuration schema 1 and preset format 1 without a data migration.
 
-Remove through the same profile:
+## Remove
+
+Stop the Host and remove the plugin from its original profile:
 
 ```sh
 dsh plugin --profile web remove dsh-memory-manager
 ```
 
-## Optional integrations
+Removal preserves configuration, observations, source resources and DSH history. Sources supporting default delegation recover their own policies; reinstall reapplies retained management configuration.
 
-Skills work through the existing DSH registry and native tool/request hooks. Tavern sources require their declared public protocols and evidence capabilities; version numbers alone do not establish these optional features. Native historical restoration requires exact request provenance. Generic assembler contributions additionally require explicit source selection and request-assembly protocol 1. Installing Manager does not install or prepare a core extension. See [usage](USAGE_en.md), [assembler integration](ASSEMBLER_en.md) and [validation](VALIDATION.md).
+For development setup, see the [developer guide](DEVELOPER_GUIDE_en.md) and [validation](VALIDATION.md).

@@ -2,7 +2,7 @@
 
 [中文](OPTIONS.md) · [API](API_en.md) · [Presets](PRESETS_en.md)
 
-GET /options describes registered capabilities as JSON and returns version:1 and catalogRevision. It never registers code, grants access, selects assembly sources, changes ownership or runs strategies. Resource IDs and assembly source IDs are distinct. Registrations, unload, same-function ABA registration, descriptor changes and enable state invalidate the catalog; editors may send expectedCatalogRevision separately from expectedRevision.
+GET /options returns JSON capability descriptions, version:1 and catalogRevision. Host condition/operation registrations provide executable implementations. Resource IDs and assembly source IDs are distinct. Registrations, unload, same-function ABA registration, descriptor changes and enable state invalidate the catalog; editors may send expectedCatalogRevision separately from expectedRevision.
 
 ## Source declarations
 
@@ -22,7 +22,7 @@ The local configuration catalog may contain arrays rules/strategies, with id/lab
 
 ## Presets and routing
 
-Builtins: builtin:skill-retrieve, builtin:mvu-managed, builtin:worldbook-retrieve, builtin:prompt-template-retrieve. No default native-card interaction preset is offered; unsupported old definitions are inspectable but cannot be imported/saved. User same-ID definitions override builtins. Adapter defaults use adapter:<adapterId>:<presetId>; explicit save materializes selected definitions. Reusable presets exclude whitelist/blacklist; user scope is local. See [portable preset format](PRESETS_en.md).
+Builtins: builtin:skill-retrieve, builtin:mvu-managed, builtin:worldbook-retrieve, builtin:prompt-template-retrieve. User same-ID definitions override builtins. Adapter defaults use adapter:<adapterId>:<presetId>; explicit save materializes selected definitions. Reusable presets exclude whitelist/blacklist; user scope is local. See [portable preset format](PRESETS_en.md).
 
 adapterId is a rule route, sourceAdapterId retains the authoritative body provider. A cross-route requires read-only validateResourceRoute confirming supported:true with exact id/sourceAdapterId; source-owned fixed strategies cannot be rerouted. No body migration, permission change or identity copy occurs. Optional body editing remains separate from configuration. Manager runtime resource/directory toggles revoke leases without deleting data; restart restores defaults.
 
