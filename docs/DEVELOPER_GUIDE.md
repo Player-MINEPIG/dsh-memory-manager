@@ -56,7 +56,7 @@ observe(listener) 发送 started/triggered/applied/skipped/failed/completed，�
 
 ```sh
 git clone https://github.com/Player-MINEPIG/dsh-prompt-assembler.git
-git clone --branch codex/assembler-integration https://github.com/Player-MINEPIG/dsh-memory-manager.git
+git clone --branch main https://github.com/Player-MINEPIG/dsh-memory-manager.git
 cd dsh-prompt-assembler
 npm ci
 cd ../dsh-memory-manager

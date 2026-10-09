@@ -7,7 +7,7 @@
 需要 DSH `0.2.0-rc.2`、Node.js `^22.19.0 || >=24`，以及仓库访问权限。停止使用目标 profile 的 Host，执行：
 
 ```sh
-dsh plugin --profile web add github:Player-MINEPIG/dsh-memory-manager#codex/assembler-integration
+dsh plugin --profile web add github:Player-MINEPIG/dsh-memory-manager#v1.0.0
 ```
 
 将 `web` 替换为实际 profile 名称，然后重启 DSH。在设置中打开「记忆管理」查看资源；已有会话也可通过同名页签查看本轮活动。

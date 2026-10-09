@@ -56,7 +56,7 @@ Keep Manager and assembler in sibling directories and install each checkout's de
 
 ```sh
 git clone https://github.com/Player-MINEPIG/dsh-prompt-assembler.git
-git clone --branch codex/assembler-integration https://github.com/Player-MINEPIG/dsh-memory-manager.git
+git clone --branch main https://github.com/Player-MINEPIG/dsh-memory-manager.git
 cd dsh-prompt-assembler
 npm ci
 cd ../dsh-memory-manager

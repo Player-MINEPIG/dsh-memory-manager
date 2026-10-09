@@ -11,7 +11,7 @@ DSH 的资源管理插件，用于统一管理 Skill、世界书、MVU 状态和
 ### 1. 安装
 
 ```sh
-dsh plugin --profile web add github:Player-MINEPIG/dsh-memory-manager#codex/assembler-integration
+dsh plugin --profile web add github:Player-MINEPIG/dsh-memory-manager#v1.0.0
 ```
 
 如果使用其他 profile，将 `web` 替换为对应名称。仓库受限时需要 GitHub 访问权限。

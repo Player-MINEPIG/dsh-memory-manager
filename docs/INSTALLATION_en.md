@@ -7,7 +7,7 @@
 Requires DSH `0.2.0-rc.2`, Node.js `^22.19.0 || >=24` and repository access. Stop the Host using the target profile, then run:
 
 ```sh
-dsh plugin --profile web add github:Player-MINEPIG/dsh-memory-manager#codex/assembler-integration
+dsh plugin --profile web add github:Player-MINEPIG/dsh-memory-manager#v1.0.0
 ```
 
 Replace `web` with your profile name and restart DSH. Open Memory Manager in Settings to browse resources, or use the conversation tab to inspect turn activity.

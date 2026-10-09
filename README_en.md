@@ -11,7 +11,7 @@ Requires DSH `0.2.0-rc.2` and Node.js `^22.19.0 || >=24`.
 ### 1. Install
 
 ```sh
-dsh plugin --profile web add github:Player-MINEPIG/dsh-memory-manager#codex/assembler-integration
+dsh plugin --profile web add github:Player-MINEPIG/dsh-memory-manager#v1.0.0
 ```
 
 Replace `web` if you use another profile. Restricted repositories require GitHub access.
